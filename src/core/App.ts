@@ -256,7 +256,10 @@ export class App {
 
     // Center Media Panel: straight ahead at -0.85m
     this.mediaPanel.group.position.set(0, 1.22, -0.85);
-    this.mediaPanel.group.lookAt(userEye);
+    const lookTargetCenter = new THREE.Vector3(userEye.x, 1.22, userEye.z);
+    this.mediaPanel.group.lookAt(lookTargetCenter);
+    this.mediaPanel.group.rotation.x = 0;
+    this.mediaPanel.group.rotation.z = 0;
 
     // Left Widgets Panel: 32 deg left
     const leftAngle = THREE.MathUtils.degToRad(-32);
@@ -266,7 +269,10 @@ export class App {
       1.18,
       -Math.cos(leftAngle) * leftDist
     );
-    this.widgetsPanel.group.lookAt(userEye);
+    const lookTargetLeft = new THREE.Vector3(userEye.x, 1.18, userEye.z);
+    this.widgetsPanel.group.lookAt(lookTargetLeft);
+    this.widgetsPanel.group.rotation.x = 0;
+    this.widgetsPanel.group.rotation.z = 0;
 
     // Right Artifact Panel: 32 deg right
     const rightAngle = THREE.MathUtils.degToRad(32);
@@ -276,7 +282,10 @@ export class App {
       1.18,
       -Math.cos(rightAngle) * rightDist
     );
-    this.artifactPanel.group.lookAt(userEye);
+    const lookTargetRight = new THREE.Vector3(userEye.x, 1.18, userEye.z);
+    this.artifactPanel.group.lookAt(lookTargetRight);
+    this.artifactPanel.group.rotation.x = 0;
+    this.artifactPanel.group.rotation.z = 0;
 
     this.audio.playWindowSnap();
   }
@@ -466,18 +475,15 @@ export class App {
       if (this.isInMR || !this.isMouseDown) return;
       getRaycastHits(e.clientX, e.clientY);
 
-      // Compute hit point on virtual plane at panel depth
-      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0.85);
-      const hitPt = new THREE.Vector3();
-      if (this.raycaster.ray.intersectPlane(plane, hitPt)) {
-        this.handController.simulateMouseInteraction(
-          hitPt,
-          'move',
-          this.camera.position,
-          [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-          this.artifactPanel
-        );
-      }
+      // Project mouse ray onto the seated 0.82m ergonomic arc sphere
+      const hitPt = this.camera.position.clone().add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
+      this.handController.simulateMouseInteraction(
+        hitPt,
+        'move',
+        this.camera.position,
+        [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
+        this.artifactPanel
+      );
     });
 
     window.addEventListener('pointerup', () => {

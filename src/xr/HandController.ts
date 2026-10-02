@@ -246,20 +246,25 @@ export class HandController {
         const rayDir = state.pinchPoint.clone().sub(userHeadPos).normalize();
         this.raycasters[i].set(userHeadPos, rayDir);
 
-        // Check Proximity & Ray Hover Detection (for handles & visual feedback)
-        const targetHover = this.findHoveredPanel(i, state.pinchPoint, userHeadPos, allPanels, visuals.rayPointerMesh);
+        // If actively dragging with this hand, hide distance pointer dot
+        if (this.activeMovePanel && this.activeMovePanel.handIndex === i) {
+          visuals.rayPointerMesh.visible = false;
+        } else {
+          // Check Proximity & Ray Hover Detection (for handles & visual feedback)
+          const targetHover = this.findHoveredPanel(i, state.pinchPoint, userHeadPos, allPanels, visuals.rayPointerMesh);
 
-        // Handle entering/exiting hover highlight & tactile click
-        if (targetHover !== this.hoveredPanels[i]) {
-          if (this.hoveredPanels[i] && !this.activeMovePanel) {
-            this.hoveredPanels[i]?.setGrabHighlight(false);
+          // Handle entering/exiting hover highlight & tactile click
+          if (targetHover !== this.hoveredPanels[i]) {
+            if (this.hoveredPanels[i] && !this.activeMovePanel) {
+              this.hoveredPanels[i]?.setGrabHighlight(false);
+            }
+            if (targetHover && !this.activeMovePanel) {
+              targetHover.setGrabHighlight(true);
+              this.audio.playClick(1.8);
+              this.audio.triggerHaptic(0.4, 25);
+            }
+            this.hoveredPanels[i] = targetHover;
           }
-          if (targetHover && !this.activeMovePanel) {
-            targetHover.setGrabHighlight(true);
-            this.audio.playClick(1.8);
-            this.audio.triggerHaptic(0.4, 25);
-          }
-          this.hoveredPanels[i] = targetHover;
         }
 
         // 1. Gesture: Handle Window Move Pinch
@@ -445,8 +450,12 @@ export class HandController {
     userHeadPos: THREE.Vector3,
     isDistanceRay: boolean
   ): void {
+    // Hide pointer reticle dot while actively dragging
+    this.visualHalos[handIndex].rayPointerMesh.visible = false;
+
     const initialPanelPos = panel.group.position.clone();
-    const initialDistance = userHeadPos.distanceTo(initialPanelPos);
+    // Clamp initial distance between 0.5m and 0.85m
+    const initialDistance = THREE.MathUtils.clamp(userHeadPos.distanceTo(initialPanelPos), 0.5, 0.85);
 
     // Calculate angular ray offset so the panel doesn't jump
     const currentRay = pinchPoint.clone().sub(userHeadPos).normalize();
@@ -492,13 +501,29 @@ export class HandController {
         targetPos = userHeadPos.clone().add(currentRay.multiplyScalar(drag.initialDistance)).add(drag.rayOffset);
       }
 
-      // Smooth damped translation
-      p.group.position.lerp(targetPos, 0.45);
+      // Requirement 3: Clamp Y-position between 0.9m and 1.4m (prevents sinking into floor)
+      targetPos.y = THREE.MathUtils.clamp(targetPos.y, 0.9, 1.4);
 
-      // Horizon OS Billboarding: Stay comfortably facing the user's head position
-      const lookTarget = userHeadPos.clone();
-      lookTarget.y = p.group.position.y; // Keep upright
+      // Requirement 3: Clamp 3D distance from userHeadPos (camera) between 0.5m and 0.85m
+      const offsetFromHead = targetPos.clone().sub(userHeadPos);
+      const distFromHead = offsetFromHead.length();
+      const clampedDist = THREE.MathUtils.clamp(distFromHead, 0.5, 0.85);
+
+      if (distFromHead > 0.0001) {
+        offsetFromHead.multiplyScalar(clampedDist / distFromHead);
+        targetPos.copy(userHeadPos).add(offsetFromHead);
+      }
+      targetPos.y = THREE.MathUtils.clamp(targetPos.y, 0.9, 1.4);
+
+      // Requirement 4: Damped Movement (lerp 0.18) for smooth, weighted hand follow
+      p.group.position.lerp(targetPos, 0.18);
+
+      // Requirement 2: Lock Upright Orientation (Pitch & Roll strictly 0)
+      // Only allow Y-axis rotation (Yaw) so panel smoothly faces user head
+      const lookTarget = new THREE.Vector3(userHeadPos.x, p.group.position.y, userHeadPos.z);
       p.group.lookAt(lookTarget);
+      p.group.rotation.x = 0;
+      p.group.rotation.z = 0;
       return;
     }
 

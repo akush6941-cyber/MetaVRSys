@@ -1,22 +1,14 @@
 /**
  * MediaPanel - Center Immersive Media Player Panel
- * Features:
- * - Curved 16:9 glassmorphic screen with dynamic procedural visualizers
- * - Interactive timeline scrubber
- * - Touch-sensitive playback controls: Play/Pause, Channel Switch, Cinema Mode
- * - Horizon OS pill handle for free 3D window translation
- * - Corner resize pin for scaling
+ * 100% Component Encapsulated:
+ * - All meshes parented strictly to this.group
+ * - Real 3D SpatialButtons for Playback, Channel Switcher, and Cinema Mode
+ * - Full WebXR fingertip poke & controller raycast select support
  */
 
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
-
-export interface SpatialWindowHandle {
-  mesh: THREE.Mesh;
-  panelGroup: THREE.Group;
-  initialOffset: THREE.Vector3;
-  type: 'move' | 'resize';
-}
+import { SpatialButton } from '../ui/SpatialButton';
 
 export class MediaPanel {
   public group: THREE.Group;
@@ -29,6 +21,16 @@ export class MediaPanel {
   private edgeLines: THREE.LineSegments;
   private handleMat: THREE.MeshStandardMaterial;
   private topBarMat: THREE.MeshStandardMaterial;
+
+  // Real 3D Interactive Buttons
+  public buttons: SpatialButton[] = [];
+  public interactiveButtonMeshes: THREE.Mesh[] = [];
+
+  private btnPrev!: SpatialButton;
+  private btnPlay!: SpatialButton;
+  private btnNext!: SpatialButton;
+  private btnSource!: SpatialButton;
+  private btnCinema!: SpatialButton;
 
   // Visualizer Canvas & Texture
   private canvas: HTMLCanvasElement;
@@ -76,7 +78,6 @@ export class MediaPanel {
     this.texture.magFilter = THREE.LinearFilter;
 
     // 2. Build Curved Screen Geometry
-    // Subtle cylinder curve for authentic VR cinema immersion
     const radius = 2.4;
     const thetaLength = this.baseWidth / radius;
     const screenGeo = new THREE.CylinderGeometry(
@@ -96,7 +97,6 @@ export class MediaPanel {
     });
 
     this.screenMesh = new THREE.Mesh(screenGeo, screenMat);
-    // Cylinder faces outward, position at origin of panel
     this.screenMesh.position.set(0, 0, 0);
     this.group.add(this.screenMesh);
 
@@ -187,13 +187,103 @@ export class MediaPanel {
     this.resizePinMesh.position.set(this.baseWidth / 2 + 0.02, this.baseHeight / 2 + 0.02, 0.01);
     this.group.add(this.resizePinMesh);
 
+    // 7. Construct Real 3D Interactive Buttons Parented Directly to this.group
+    this.build3DButtons();
+
     // Initial render
     this.renderCanvas(0);
   }
 
-  /**
-   * Highlight handles with brighter glowing cyan border when hand is near or pointing
-   */
+  private build3DButtons(): void {
+    const btnY = -this.baseHeight / 2 + 0.048; // Y: -0.212
+    const btnZ = 0.018;
+
+    // [◀ PREV]
+    this.btnPrev = new SpatialButton({
+      width: 0.10,
+      height: 0.036,
+      label: '◀ PREV',
+      color: 0x1e293b,
+      onClick: () => {
+        this.currentChannel =
+          (this.currentChannel - 1 + this.channels.length) % this.channels.length;
+        this.audio.playClick(0.9);
+      },
+    });
+    this.btnPrev.setPosition(-0.28, btnY, btnZ);
+    this.addButton(this.btnPrev);
+
+    // [▶ PLAY / ⏸ PAUSE]
+    this.btnPlay = new SpatialButton({
+      width: 0.13,
+      height: 0.036,
+      label: '⏸ PAUSE',
+      color: 0x0284c7,
+      activeColor: 0x10b981,
+      onClick: () => {
+        this.isPlaying = !this.isPlaying;
+        this.btnPlay.updateLabel(this.isPlaying ? '⏸ PAUSE' : '▶ PLAY', this.isPlaying);
+        this.audio.playClick(this.isPlaying ? 1.2 : 0.8);
+      },
+    });
+    this.btnPlay.setPosition(-0.14, btnY, btnZ);
+    this.btnPlay.updateLabel('⏸ PAUSE', true);
+    this.addButton(this.btnPlay);
+
+    // [NEXT ▶]
+    this.btnNext = new SpatialButton({
+      width: 0.10,
+      height: 0.036,
+      label: 'NEXT ▶',
+      color: 0x1e293b,
+      onClick: () => {
+        this.currentChannel = (this.currentChannel + 1) % this.channels.length;
+        this.audio.playClick(1.1);
+      },
+    });
+    this.btnNext.setPosition(0.00, btnY, btnZ);
+    this.addButton(this.btnNext);
+
+    // [⚡ SOURCE]
+    this.btnSource = new SpatialButton({
+      width: 0.15,
+      height: 0.036,
+      label: '⚡ SOURCE',
+      color: 0x7c3aed,
+      onClick: () => {
+        this.currentChannel = (this.currentChannel + 1) % this.channels.length;
+        this.audio.playClick(1.3);
+      },
+    });
+    this.btnSource.setPosition(0.145, btnY, btnZ);
+    this.addButton(this.btnSource);
+
+    // [✦ CINEMA MODE]
+    this.btnCinema = new SpatialButton({
+      width: 0.15,
+      height: 0.036,
+      label: '✦ CINEMA',
+      color: 0x334155,
+      activeColor: 0x10b981,
+      onClick: () => {
+        this.toggleCinemaMode();
+      },
+    });
+    this.btnCinema.setPosition(0.31, btnY, btnZ);
+    this.addButton(this.btnCinema);
+  }
+
+  private addButton(btn: SpatialButton): void {
+    this.buttons.push(btn);
+    this.interactiveButtonMeshes.push(btn.mesh);
+    // CRITICAL: Parent button directly to this.group so it moves synchronously with the window
+    this.group.add(btn.mesh);
+  }
+
+  public getInteractiveButtons(): THREE.Mesh[] {
+    return this.interactiveButtonMeshes;
+  }
+
   public setGrabHighlight(active: boolean): void {
     this.isHovered = active;
     const targetColor = active ? 0x00ffff : 0x38bdf8;
@@ -212,9 +302,6 @@ export class MediaPanel {
     (this.edgeLines.material as THREE.LineBasicMaterial).opacity = active ? 0.85 : 0.35;
   }
 
-  /**
-   * Visual feedback while dragging: scales panel by 1.02x
-   */
   public setDraggingState(dragging: boolean): void {
     this.isDragging = dragging;
     const multiplier = dragging ? 1.02 : 1.0;
@@ -223,9 +310,6 @@ export class MediaPanel {
     this.setGrabHighlight(dragging);
   }
 
-  /**
-   * Procedural video & visualizer rendering loop
-   */
   public update(delta: number): void {
     if (this.isPlaying) {
       this.currentTime = (this.currentTime + delta) % this.duration;
@@ -240,7 +324,6 @@ export class MediaPanel {
     const w = this.canvas.width;
     const h = this.canvas.height;
 
-    // Background gradient based on channel
     ctx.clearRect(0, 0, w, h);
 
     if (this.currentChannel === 0) {
@@ -297,7 +380,6 @@ export class MediaPanel {
       ctx.fillStyle = '#02040a';
       ctx.fillRect(0, 0, w, h);
 
-      // Radial glowing nebula clouds
       const cx = w / 2 + Math.sin(time * 0.8) * 60;
       const cy = h / 2 + Math.cos(time * 0.6) * 40;
       const nebGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 380);
@@ -308,7 +390,6 @@ export class MediaPanel {
       ctx.fillStyle = nebGrad;
       ctx.fillRect(0, 0, w, h);
 
-      // Orbiting particles
       for (let i = 0; i < 60; i++) {
         const angle = time * 0.4 + i * (Math.PI * 2 / 60);
         const dist = 120 + Math.sin(time + i) * 80;
@@ -335,7 +416,6 @@ export class MediaPanel {
       ctx.fillText(`HEAD_TRACKING: 6DOF | HAND_ENGINE: W3C_XR_HAND`, 60, 110);
       ctx.fillText(`PASSTHROUGH_STATUS: ACTIVE | SEATED_ARC: 0.85M`, 60, 135);
 
-      // Telemetry graph
       ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -355,13 +435,11 @@ export class MediaPanel {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
 
-      // Glowing Sun
       ctx.fillStyle = '#fde047';
       ctx.beginPath();
       ctx.arc(w / 2, h / 2 - 20, 80, 0, Math.PI * 2);
       ctx.fill();
 
-      // Horizon line
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, h / 2 + 60, w, h);
     }
@@ -384,11 +462,10 @@ export class MediaPanel {
       32
     );
 
-    // Bottom Playback Controls Bar
+    // Bottom Scrubber Bar & Backplate
     ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.fillRect(0, h - 90, w, 90);
+    ctx.fillRect(0, h - 86, w, 86);
 
-    // Scrubber Bar
     const scrubX = 40;
     const scrubY = h - 68;
     const scrubWidth = w - 80;
@@ -407,31 +484,6 @@ export class MediaPanel {
     ctx.beginPath();
     ctx.arc(scrubX + scrubWidth * progress, scrubY + 3, 8, 0, Math.PI * 2);
     ctx.fill();
-
-    // Control Buttons (Drawn on canvas for direct hit testing)
-    const btnY = h - 35;
-    ctx.font = 'bold 15px monospace';
-    ctx.textAlign = 'center';
-
-    // [PREV]
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('◀◀ PREV', 100, btnY);
-
-    // [PLAY / PAUSE]
-    ctx.fillStyle = this.isPlaying ? '#38bdf8' : '#f59e0b';
-    ctx.fillText(this.isPlaying ? '⏸ PAUSE' : '▶ PLAY', 220, btnY);
-
-    // [NEXT]
-    ctx.fillStyle = '#94a3b8';
-    ctx.fillText('NEXT ▶▶', 340, btnY);
-
-    // [CHANNEL]
-    ctx.fillStyle = '#c084fc';
-    ctx.fillText('⚡ SWITCH SOURCE', 520, btnY);
-
-    // [CINEMA MODE]
-    ctx.fillStyle = this.isCinemaMode ? '#4ade80' : '#e2e8f0';
-    ctx.fillText(this.isCinemaMode ? '✦ CINEMA ACTIVE' : '✦ CINEMA MODE', w - 140, btnY);
   }
 
   private formatTime(seconds: number): string {
@@ -440,16 +492,13 @@ export class MediaPanel {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
-  /**
-   * Handle direct touch or click hit at UV coordinates (0..1, 0..1)
-   */
   public handleTouchUV(u: number, v: number): void {
     const w = this.canvas.width;
     const h = this.canvas.height;
     const x = u * w;
-    const y = (1 - v) * h; // flip Y for Three.js UV
+    const y = (1 - v) * h;
 
-    // 1. Scrubber Click / Seek
+    // Scrubber Click / Seek
     const scrubX = 40;
     const scrubY = h - 68;
     const scrubWidth = w - 80;
@@ -457,40 +506,14 @@ export class MediaPanel {
       const prog = (x - scrubX) / scrubWidth;
       this.currentTime = Math.max(0, Math.min(this.duration, prog * this.duration));
       this.audio.playScrubTick();
-      return;
-    }
-
-    // 2. Playback Buttons (y in bottom bar)
-    if (y >= h - 55 && y <= h - 15) {
-      if (x >= 50 && x <= 150) {
-        // PREV
-        this.currentChannel =
-          (this.currentChannel - 1 + this.channels.length) % this.channels.length;
-        this.audio.playClick(0.9);
-      } else if (x >= 170 && x <= 270) {
-        // PLAY / PAUSE
-        this.isPlaying = !this.isPlaying;
-        this.audio.playClick(this.isPlaying ? 1.2 : 0.8);
-      } else if (x >= 290 && x <= 390) {
-        // NEXT
-        this.currentChannel = (this.currentChannel + 1) % this.channels.length;
-        this.audio.playClick(1.1);
-      } else if (x >= 430 && x <= 620) {
-        // SWITCH SOURCE
-        this.currentChannel = (this.currentChannel + 1) % this.channels.length;
-        this.audio.playClick(1.3);
-      } else if (x >= w - 220 && x <= w - 40) {
-        // CINEMA MODE TOGGLE
-        this.toggleCinemaMode();
-      }
     }
   }
 
   public toggleCinemaMode(): void {
     this.isCinemaMode = !this.isCinemaMode;
+    this.btnCinema.updateLabel(this.isCinemaMode ? '✦ ACTIVE' : '✦ CINEMA', this.isCinemaMode);
     this.audio.playWindowMove();
 
-    // Scale animation
     const targetScale = this.isCinemaMode ? 1.45 : 1.0;
     this.scaleFactor = targetScale;
     this.group.scale.set(targetScale, targetScale, targetScale);

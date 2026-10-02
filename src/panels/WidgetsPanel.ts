@@ -1,15 +1,14 @@
 /**
  * WidgetsPanel - Left Spatial Widget & Daily Flow Panel
- * Features:
- * - Pomodoro Focus Timer with live countdown and circular progress
- * - Interactive Daily Objectives Checklist (direct touch check/uncheck)
- * - Quick Notes card with ambient metrics
- * - Pill handle for free 3D window translation
- * - Corner resize pin
+ * 100% Component Encapsulated:
+ * - All meshes parented strictly to this.group
+ * - Real 3D SpatialButtons for Pomodoro Focus & Daily Objectives
+ * - Full WebXR fingertip poke & controller raycast select support
  */
 
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
+import { SpatialButton } from '../ui/SpatialButton';
 
 export interface TaskItem {
   id: string;
@@ -29,6 +28,16 @@ export class WidgetsPanel {
   private handleMat: THREE.MeshStandardMaterial;
   private topBarMat: THREE.MeshStandardMaterial;
 
+  // Real 3D Interactive Buttons
+  public buttons: SpatialButton[] = [];
+  public interactiveButtonMeshes: THREE.Mesh[] = [];
+
+  private btnStart!: SpatialButton;
+  private btnReset!: SpatialButton;
+  private btnPlus5!: SpatialButton;
+  private taskButtons: SpatialButton[] = [];
+
+  // Canvas Texture for Background Graphics (Timer Ring & Ambient Labels)
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private texture: THREE.CanvasTexture;
@@ -46,9 +55,6 @@ export class WidgetsPanel {
     { id: '4', title: 'Review Spatial Audio Synth Latency', completed: false },
   ];
 
-  // Quick Notes
-  public noteText: string = 'Spatial Command active. Zero controllers required in MR session.';
-
   public baseWidth: number = 0.68;
   public baseHeight: number = 0.58;
   public scaleFactor: number = 1.0;
@@ -61,7 +67,7 @@ export class WidgetsPanel {
     this.audio = audio;
     this.group = new THREE.Group();
 
-    // Setup high-res 2D canvas (800x680)
+    // 1. Setup 2D Backdrop Canvas for non-interactive ambient graphics
     this.canvas = document.createElement('canvas');
     this.canvas.width = 800;
     this.canvas.height = 680;
@@ -71,7 +77,7 @@ export class WidgetsPanel {
     this.texture.minFilter = THREE.LinearFilter;
     this.texture.magFilter = THREE.LinearFilter;
 
-    // Curved or flat panel geometry
+    // Panel Geometry
     const panelGeo = new THREE.PlaneGeometry(this.baseWidth, this.baseHeight);
     const panelMat = new THREE.MeshBasicMaterial({
       map: this.texture,
@@ -81,7 +87,7 @@ export class WidgetsPanel {
     this.panelMesh = new THREE.Mesh(panelGeo, panelMat);
     this.group.add(this.panelMesh);
 
-    // Frosted Glass Backing
+    // Frosted Glass Backing Plate
     const backGeo = new THREE.PlaneGeometry(this.baseWidth + 0.02, this.baseHeight + 0.02);
     const backMat = new THREE.MeshStandardMaterial({
       color: 0x0a101f,
@@ -105,7 +111,7 @@ export class WidgetsPanel {
     this.edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
     this.group.add(this.edgeLines);
 
-    // 4. Horizon OS Top Title Bar (Active Grab Target)
+    // 2. Horizon OS Top Title Bar (Active Grab Target)
     const topBarGeo = new THREE.CylinderGeometry(0.009, 0.009, this.baseWidth * 0.72, 16);
     this.topBarMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -126,7 +132,7 @@ export class WidgetsPanel {
     this.topBarHitbox.position.copy(this.topBarMesh.position);
     this.group.add(this.topBarHitbox);
 
-    // 5. Pill Handle (Bottom Active Grab Target)
+    // 3. Horizon OS Bottom Pill Handle (Active Grab Target)
     const handleGeo = new THREE.CylinderGeometry(0.009, 0.009, this.baseWidth * 0.55, 16);
     this.handleMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -146,7 +152,7 @@ export class WidgetsPanel {
     this.bottomBarHitbox.position.copy(this.handleMesh.position);
     this.group.add(this.bottomBarHitbox);
 
-    // 6. Corner Resize Pin
+    // 4. Corner Resize Pin (Top-Right)
     const pinGeo = new THREE.SphereGeometry(0.018, 16, 16);
     const pinMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -159,7 +165,97 @@ export class WidgetsPanel {
     this.resizePinMesh.position.set(this.baseWidth / 2 + 0.02, this.baseHeight / 2 + 0.02, 0.01);
     this.group.add(this.resizePinMesh);
 
+    // 5. Construct Real 3D Interactive Buttons Parented Directly to this.group
+    this.build3DButtons();
+
     this.renderCanvas();
+  }
+
+  private build3DButtons(): void {
+    // A. Pomodoro Buttons (Row at Y: 0.115)
+    this.btnStart = new SpatialButton({
+      width: 0.12,
+      height: 0.038,
+      label: '▶ START',
+      color: 0x0284c7,
+      activeColor: 0xf59e0b,
+      onClick: () => {
+        this.isTimerRunning = !this.isTimerRunning;
+        this.btnStart.updateLabel(this.isTimerRunning ? '⏸ PAUSE' : '▶ START', this.isTimerRunning);
+        this.audio.playClick(this.isTimerRunning ? 1.2 : 0.9);
+      },
+    });
+    this.btnStart.setPosition(0.03, 0.115, 0.014);
+    this.addButton(this.btnStart);
+
+    this.btnReset = new SpatialButton({
+      width: 0.08,
+      height: 0.038,
+      label: 'RESET',
+      color: 0x334155,
+      onClick: () => {
+        this.isTimerRunning = false;
+        this.pomodoroRemainingSec = this.pomodoroTotalSec;
+        this.btnStart.updateLabel('▶ START', false);
+        this.audio.playClick(0.8);
+      },
+    });
+    this.btnReset.setPosition(0.14, 0.115, 0.014);
+    this.addButton(this.btnReset);
+
+    this.btnPlus5 = new SpatialButton({
+      width: 0.08,
+      height: 0.038,
+      label: '+5 MIN',
+      color: 0x1e293b,
+      onClick: () => {
+        this.pomodoroRemainingSec += 5 * 60;
+        this.pomodoroTotalSec += 5 * 60;
+        this.audio.playClick(1.4);
+      },
+    });
+    this.btnPlus5.setPosition(0.23, 0.115, 0.014);
+    this.addButton(this.btnPlus5);
+
+    // B. Daily Objectives Checklist 3D Row Buttons
+    const taskYStarts = [-0.01, -0.06, -0.11, -0.16];
+    this.tasks.forEach((task, idx) => {
+      const taskBtn = new SpatialButton({
+        width: 0.58,
+        height: 0.038,
+        label: `${task.completed ? '✓ ' : '○ '}${task.title}`,
+        color: task.completed ? 0x0369a1 : 0x1e293b,
+        activeColor: 0x0284c7,
+        onClick: () => {
+          task.completed = !task.completed;
+          taskBtn.updateLabel(
+            `${task.completed ? '✓ ' : '○ '}${task.title}`,
+            task.completed
+          );
+          this.audio.playClick(task.completed ? 1.3 : 0.8);
+          if (task.completed) {
+            this.audio.triggerHaptic(0.6, 50);
+          }
+        },
+      });
+      taskBtn.setPosition(0, taskYStarts[idx], 0.014);
+      if (task.completed) {
+        taskBtn.updateLabel(`✓ ${task.title}`, true);
+      }
+      this.addButton(taskBtn);
+      this.taskButtons.push(taskBtn);
+    });
+  }
+
+  private addButton(btn: SpatialButton): void {
+    this.buttons.push(btn);
+    this.interactiveButtonMeshes.push(btn.mesh);
+    // CRITICAL: Parent button directly to this.group so it moves synchronously with the window
+    this.group.add(btn.mesh);
+  }
+
+  public getInteractiveButtons(): THREE.Mesh[] {
+    return this.interactiveButtonMeshes;
   }
 
   public setGrabHighlight(active: boolean): void {
@@ -194,6 +290,7 @@ export class WidgetsPanel {
       if (this.pomodoroRemainingSec <= 0) {
         this.pomodoroRemainingSec = 0;
         this.isTimerRunning = false;
+        this.btnStart.updateLabel('▶ START', false);
         this.audio.playBell();
       }
     }
@@ -229,17 +326,17 @@ export class WidgetsPanel {
     ctx.textAlign = 'right';
     ctx.fillText(timeStr, w - 30, 36);
 
-    // CARD 1: POMODORO FOCUS TIMER (Y: 76 to 250)
+    // CARD 1: POMODORO FOCUS TIMER (Y: 76 to 235)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-    ctx.fillRect(25, 76, w - 50, 174);
+    ctx.fillRect(25, 76, w - 50, 160);
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(25, 76, w - 50, 174);
+    ctx.strokeRect(25, 76, w - 50, 160);
 
     // Timer Circle Ring (Left of Card)
-    const ringCenterX = 120;
-    const ringCenterY = 163;
-    const ringRadius = 55;
+    const ringCenterX = 115;
+    const ringCenterY = 156;
+    const ringRadius = 50;
 
     // Background track
     ctx.beginPath();
@@ -259,153 +356,56 @@ export class WidgetsPanel {
     // Digital Time inside ring
     const mins = Math.floor(this.pomodoroRemainingSec / 60);
     const secs = Math.floor(this.pomodoroRemainingSec % 60);
-    ctx.font = 'bold 24px monospace';
+    ctx.font = 'bold 22px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.fillText(`${mins}:${secs < 10 ? '0' : ''}${secs}`, ringCenterX, ringCenterY + 8);
+    ctx.fillText(`${mins}:${secs < 10 ? '0' : ''}${secs}`, ringCenterX, ringCenterY + 7);
 
-    // Pomodoro Controls (Right of Card)
+    // Pomodoro Header
     ctx.textAlign = 'left';
     ctx.font = 'bold 18px monospace';
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText('POMODORO FOCUS', 210, 115);
+    ctx.fillText('POMODORO FOCUS', 200, 110);
 
-    ctx.font = '14px sans-serif';
+    ctx.font = '13px sans-serif';
     ctx.fillStyle = '#94a3b8';
-    ctx.fillText(this.isTimerRunning ? '● Focus Session in Progress' : '○ Standby · Tap Start to Begin', 210, 140);
+    ctx.fillText(this.isTimerRunning ? '● Focus Session Active' : '○ Standby · Tap button below', 200, 132);
 
-    // Button 1: [START / PAUSE]
-    ctx.fillStyle = this.isTimerRunning ? '#f59e0b' : '#0284c7';
-    ctx.fillRect(210, 165, 140, 42);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(this.isTimerRunning ? '⏸ PAUSE' : '▶ START', 280, 192);
-
-    // Button 2: [RESET]
-    ctx.fillStyle = '#334155';
-    ctx.fillRect(365, 165, 100, 42);
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillText('RESET', 415, 192);
-
-    // Button 3: [+5 MIN]
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(480, 165, 110, 42);
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillText('+5 MIN', 535, 192);
-
-    // CARD 2: DAILY OBJECTIVES (Y: 270 to 520)
+    // CARD 2: DAILY OBJECTIVES HEADER (Y: 250)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-    ctx.fillRect(25, 270, w - 50, 250);
+    ctx.fillRect(25, 250, w - 50, 260);
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(25, 270, w - 50, 250);
+    ctx.strokeRect(25, 250, w - 50, 260);
 
-    ctx.font = 'bold 18px monospace';
+    ctx.font = 'bold 17px monospace';
     ctx.fillStyle = '#38bdf8';
     ctx.textAlign = 'left';
-    ctx.fillText('OBJECTIVES CHECKLIST (TAP TO TOGGLE)', 45, 305);
+    ctx.fillText('OBJECTIVES CHECKLIST (TAP BUTTONS)', 45, 280);
 
-    // Task Items
-    this.tasks.forEach((task, idx) => {
-      const itemY = 345 + idx * 46;
-
-      // Checkbox Box
-      const boxSize = 24;
-      const boxX = 45;
-      const boxY = itemY - 18;
-
-      ctx.fillStyle = task.completed ? '#0284c7' : '#1e293b';
-      ctx.fillRect(boxX, boxY, boxSize, boxSize);
-      ctx.strokeStyle = task.completed ? '#00f0ff' : '#475569';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(boxX, boxY, boxSize, boxSize);
-
-      if (task.completed) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('✓', boxX + boxSize / 2, boxY + 18);
-      }
-
-      // Task Label
-      ctx.font = task.completed ? '16px sans-serif' : '16px sans-serif';
-      ctx.fillStyle = task.completed ? '#94a3b8' : '#f1f5f9';
-      ctx.textAlign = 'left';
-      ctx.fillText(task.title, 85, itemY);
-
-      if (task.completed) {
-        // Strike-through line
-        ctx.strokeStyle = '#64748b';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        const textW = ctx.measureText(task.title).width;
-        ctx.moveTo(85, itemY - 5);
-        ctx.lineTo(85 + textW, itemY - 5);
-        ctx.stroke();
-      }
-    });
-
-    // CARD 3: QUICK NOTES (Y: 535 to 650)
+    // CARD 3: QUICK NOTES (Y: 525 to 650)
     ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-    ctx.fillRect(25, 535, w - 50, 115);
+    ctx.fillRect(25, 525, w - 50, 125);
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.2)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(25, 535, w - 50, 115);
+    ctx.strokeRect(25, 525, w - 50, 125);
 
     ctx.font = 'bold 16px monospace';
     ctx.fillStyle = '#f59e0b';
     ctx.textAlign = 'left';
-    ctx.fillText('QUICK NOTES // SEATED COMMAND', 45, 565);
+    ctx.fillText('SPATIAL COMMAND SUITE', 45, 555);
 
     ctx.font = '14px sans-serif';
     ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(this.noteText, 45, 595);
+    ctx.fillText('Touch 3D buttons directly with index finger or pinch from distance.', 45, 585);
 
     ctx.font = '12px monospace';
     ctx.fillStyle = '#38bdf8';
-    ctx.fillText('• Seated Arc: 0.85m Radius · Passthrough Enabled · 72+ FPS', 45, 625);
+    ctx.fillText('• Seated Arc: 0.85m Radius · Passthrough Enabled · 72+ FPS', 45, 615);
   }
 
-  public handleTouchUV(u: number, v: number): void {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const x = u * w;
-    const y = (1 - v) * h;
-
-    // 1. Pomodoro Buttons
-    if (y >= 165 && y <= 207) {
-      if (x >= 210 && x <= 350) {
-        // START / PAUSE
-        this.isTimerRunning = !this.isTimerRunning;
-        this.audio.playClick(this.isTimerRunning ? 1.2 : 0.9);
-        return;
-      } else if (x >= 365 && x <= 465) {
-        // RESET
-        this.isTimerRunning = false;
-        this.pomodoroRemainingSec = this.pomodoroTotalSec;
-        this.audio.playClick(0.8);
-        return;
-      } else if (x >= 480 && x <= 590) {
-        // +5 MIN
-        this.pomodoroRemainingSec += 5 * 60;
-        this.pomodoroTotalSec += 5 * 60;
-        this.audio.playClick(1.4);
-        return;
-      }
-    }
-
-    // 2. Checklist Items
-    this.tasks.forEach((task, idx) => {
-      const itemY = 345 + idx * 46;
-      if (y >= itemY - 22 && y <= itemY + 16 && x >= 40 && x <= w - 60) {
-        task.completed = !task.completed;
-        this.audio.playClick(task.completed ? 1.3 : 0.8);
-        if (task.completed) {
-          this.audio.triggerHaptic(0.6, 50);
-        }
-      }
-    });
+  public handleTouchUV(_u: number, _v: number): void {
+    // Touch interactions are handled directly via 3D SpatialButtons
   }
 
   public setScale(factor: number): void {

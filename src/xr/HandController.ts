@@ -35,7 +35,9 @@ export interface HandState {
 
 export class HandController {
   public hands: THREE.XRHandSpace[] = [];
+  public controllers: THREE.XRTargetRaySpace[] = [];
   public handStates: HandState[] = [];
+  private lastInteractiveButtons: THREE.Mesh[] = [];
 
   // Visual Contact Micro-Halos at fingertips
   private visualHalos: {
@@ -92,6 +94,15 @@ export class HandController {
       const hand = this.renderer.xr.getHand(i);
       this.hands.push(hand);
       this.scene.add(hand);
+
+      // Also register WebXR Target Ray controllers (for standard 6DOF controllers)
+      const controller = this.renderer.xr.getController(i);
+      this.controllers.push(controller);
+      this.scene.add(controller);
+
+      controller.addEventListener('selectstart', () => {
+        this.handleControllerSelect(i);
+      });
 
       this.handStates.push({
         indexTipPos: new THREE.Vector3(),
@@ -182,8 +193,11 @@ export class HandController {
     userHeadPos: THREE.Vector3,
     mediaPanel: MediaPanel,
     widgetsPanel: WidgetsPanel,
-    artifactPanel: ArtifactPanel
+    artifactPanel: ArtifactPanel,
+    interactiveButtons: THREE.Mesh[] = []
   ): void {
+    this.lastInteractiveButtons = interactiveButtons;
+
     // Forgiving pinch thresholds for Quest hand tracking
     const PINCH_START = 0.028; // 28mm start
     const PINCH_END = 0.045;   // 45mm release
@@ -250,8 +264,15 @@ export class HandController {
         if (this.activeMovePanel && this.activeMovePanel.handIndex === i) {
           visuals.rayPointerMesh.visible = false;
         } else {
-          // Check Proximity & Ray Hover Detection (for handles & visual feedback)
-          const targetHover = this.findHoveredPanel(i, state.pinchPoint, userHeadPos, allPanels, visuals.rayPointerMesh);
+          // Check Proximity & Ray Hover Detection (for buttons, handles & visual feedback)
+          const targetHover = this.findHoveredPanel(
+            i,
+            state.pinchPoint,
+            userHeadPos,
+            allPanels,
+            interactiveButtons,
+            visuals.rayPointerMesh
+          );
 
           // Handle entering/exiting hover highlight & tactile click
           if (targetHover !== this.hoveredPanels[i]) {
@@ -267,16 +288,16 @@ export class HandController {
           }
         }
 
-        // 1. Gesture: Handle Window Move Pinch
+        // 1. Gesture: Handle Window Move Pinch or Button Pinch Select
         if (state.isPinchStarted) {
-          this.checkPinchStart(i, state.pinchPoint, userHeadPos, allPanels, artifactPanel);
+          this.checkPinchStart(i, state.pinchPoint, userHeadPos, allPanels, artifactPanel, interactiveButtons);
         } else if (state.isPinchEnded) {
           this.releaseAllGrabs(i);
         } else if (state.isPinching) {
           this.handleActivePinch(i, state.pinchPoint, userHeadPos);
         }
 
-        // 2. Gesture: Direct Index Fingertip Touch on Panels (when not pinching or dragging)
+        // 2. Gesture: Direct Touch on Glass Panels (e.g. media scrubber)
         if (!state.isPinching && !this.activeMovePanel) {
           this.checkDirectFingertipTouch(i, state.indexTipPos, allPanels);
         }
@@ -293,6 +314,11 @@ export class HandController {
         this.releaseAllGrabs(i);
       }
     }
+
+    // 3. Dual-Mode WebXR Interaction: Direct Fingertip Poke on 3D Buttons (checked across both hands)
+    if (!this.activeMovePanel) {
+      this.checkButtonsPokeBothHands(interactiveButtons);
+    }
   }
 
   /**
@@ -303,6 +329,7 @@ export class HandController {
     pinchPoint: THREE.Vector3,
     _userHeadPos: THREE.Vector3,
     panels: AnySpatialPanel[],
+    interactiveButtons: THREE.Mesh[],
     pointerMesh: THREE.Mesh
   ): AnySpatialPanel | null {
     const PROXIMITY_RADIUS = 0.15; // 0.15m (150mm) expanded grab hitbox radius
@@ -323,8 +350,18 @@ export class HandController {
       }
     }
 
-    // 2. Second check Distance Raycast
+    // 2. Second check distance raycast against interactive buttons
     const ray = this.raycasters[handIndex];
+    if (interactiveButtons.length > 0) {
+      const btnHits = ray.intersectObjects(interactiveButtons, true);
+      if (btnHits.length > 0) {
+        pointerMesh.visible = true;
+        pointerMesh.position.copy(btnHits[0].point);
+        return null; // Hovering directly over an interactive button!
+      }
+    }
+
+    // 3. Third check Distance Raycast against panels
     let closestPanel: AnySpatialPanel | null = null;
     let closestDist = Infinity;
     let hitLocation: THREE.Vector3 | null = null;
@@ -361,12 +398,35 @@ export class HandController {
     pinchPoint: THREE.Vector3,
     userHeadPos: THREE.Vector3,
     panels: AnySpatialPanel[],
-    artifactPanel: ArtifactPanel
+    artifactPanel: ArtifactPanel,
+    interactiveButtons: THREE.Mesh[] = []
   ): void {
     const PROXIMITY_RADIUS = 0.15; // 0.15m (150mm) hitbox radius
     const PIN_RADIUS = 0.085;      // 85mm corner pin grab radius
+    const ray = this.raycasters[handIndex];
 
-    // 1. Check Corner Resize Pins first (Top-Right of panels)
+    // 0. Priority 1: Interactive 3D Buttons (Pinch Select from Distance)
+    if (interactiveButtons.length > 0) {
+      const buttonHits = ray.intersectObjects(interactiveButtons, true);
+      if (buttonHits.length > 0) {
+        const hitObj = buttonHits[0].object;
+        const btn = (hitObj.userData.buttonRef || hitObj) as THREE.Mesh;
+        if (btn.userData && typeof btn.userData.onClick === 'function') {
+          btn.userData.isPressed = true;
+          btn.userData.onClick();
+          this.audio.playClick(1.2);
+          this.audio.triggerHaptic(0.6, 35);
+          btn.position.z = (btn.userData.originalZ ?? 0.015) - 0.005;
+          setTimeout(() => {
+            btn.userData.isPressed = false;
+            btn.position.z = btn.userData.originalZ ?? 0.015;
+          }, 120);
+          return; // Button clicked! Prevent panel dragging.
+        }
+      }
+    }
+
+    // 1. Check Corner Resize Pins (Top-Right of panels)
     for (const p of panels) {
       const pinWorld = new THREE.Vector3();
       p.resizePinMesh.getWorldPosition(pinWorld);
@@ -415,7 +475,6 @@ export class HandController {
     }
 
     // 4. Distance-Independent Raycast Grab (Point & Pinch from afar)
-    const ray = this.raycasters[handIndex];
     let closestPanel: AnySpatialPanel | null = null;
     let closestDist = Infinity;
 
@@ -567,6 +626,104 @@ export class HandController {
     }
   }
 
+  private getDistanceToButtonSurface(btn: THREE.Mesh, tipPos: THREE.Vector3): number {
+    // 1. Center distance fallback
+    const btnPos = new THREE.Vector3();
+    btn.getWorldPosition(btnPos);
+    const centerDist = tipPos.distanceTo(btnPos);
+
+    // 2. Physical surface bounds distance (essential for wide checkbox rows)
+    const localTip = btn.worldToLocal(tipPos.clone());
+    const halfW = (btn.userData.width ?? 0.1) / 2;
+    const halfH = (btn.userData.height ?? 0.04) / 2;
+    const frontZ = (btn.userData.depth ?? 0.012) / 2;
+
+    const clampedX = THREE.MathUtils.clamp(localTip.x, -halfW, halfW);
+    const clampedY = THREE.MathUtils.clamp(localTip.y, -halfH, halfH);
+    const surfaceDist = Math.hypot(localTip.x - clampedX, localTip.y - clampedY, localTip.z - frontZ);
+
+    return Math.min(centerDist, surfaceDist);
+  }
+
+  /**
+   * Dual-Mode WebXR Fingertip Poke on 3D Buttons (checked across both hands simultaneously)
+   * Trigger click when fingertip touches the button surface (< 0.025m)
+   * Release when fingertip moves away (>= 0.035m)
+   */
+  private checkButtonsPokeBothHands(interactiveButtons: THREE.Mesh[]): void {
+    if (interactiveButtons.length === 0) return;
+
+    const tip0 = this.handStates[0].isTracked ? this.handStates[0].indexTipPos : null;
+    const tip1 = this.handStates[1].isTracked ? this.handStates[1].indexTipPos : null;
+
+    if (!tip0 && !tip1) {
+      for (const btn of interactiveButtons) {
+        if (btn.userData.isPressed) {
+          btn.userData.isPressed = false;
+          btn.position.z = btn.userData.originalZ ?? 0.015;
+        }
+      }
+      return;
+    }
+
+    for (const btn of interactiveButtons) {
+      let minDist = Infinity;
+      if (tip0) {
+        minDist = Math.min(minDist, this.getDistanceToButtonSurface(btn, tip0));
+      }
+      if (tip1) {
+        minDist = Math.min(minDist, this.getDistanceToButtonSurface(btn, tip1));
+      }
+
+      // Trigger click when fingertip touches the button surface (< 0.025m)
+      if (minDist < 0.025 && !btn.userData.isPressed) {
+        btn.userData.isPressed = true;
+        if (typeof btn.userData.onClick === 'function') {
+          btn.userData.onClick();
+        }
+        this.audio.playClick(1.2);
+        this.audio.triggerHaptic(0.6, 35);
+        // Visual feedback: push button back slightly in Z
+        btn.position.z = (btn.userData.originalZ ?? 0.015) - 0.005;
+      } else if (minDist >= 0.035 && btn.userData.isPressed) {
+        btn.userData.isPressed = false;
+        btn.position.z = btn.userData.originalZ ?? 0.015;
+      }
+    }
+  }
+
+  /**
+   * Standard 6DOF WebXR Controller Select (trigger pull)
+   */
+  private handleControllerSelect(controllerIndex: number): void {
+    const controller = this.controllers[controllerIndex];
+    if (!controller || this.lastInteractiveButtons.length === 0) return;
+
+    const tempMatrix = new THREE.Matrix4();
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    const rayDir = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+    const rayOrigin = new THREE.Vector3();
+    controller.getWorldPosition(rayOrigin);
+
+    const ray = new THREE.Raycaster(rayOrigin, rayDir);
+    const hits = ray.intersectObjects(this.lastInteractiveButtons, true);
+    if (hits.length > 0) {
+      const hitObj = hits[0].object;
+      const btn = (hitObj.userData.buttonRef || hitObj) as THREE.Mesh;
+      if (btn.userData && typeof btn.userData.onClick === 'function') {
+        btn.userData.isPressed = true;
+        btn.userData.onClick();
+        this.audio.playClick(1.2);
+        this.audio.triggerHaptic(0.6, 35);
+        btn.position.z = (btn.userData.originalZ ?? 0.015) - 0.005;
+        setTimeout(() => {
+          btn.userData.isPressed = false;
+          btn.position.z = btn.userData.originalZ ?? 0.015;
+        }, 120);
+      }
+    }
+  }
+
   /**
    * Direct Touch & Poke Detection for Glass Panels
    */
@@ -622,10 +779,11 @@ export class HandController {
     type: 'down' | 'move' | 'up',
     userHeadPos: THREE.Vector3,
     panels: AnySpatialPanel[],
-    artifactPanel: ArtifactPanel
+    artifactPanel: ArtifactPanel,
+    interactiveButtons: THREE.Mesh[] = []
   ): void {
     if (type === 'down') {
-      this.checkPinchStart(0, hitPoint, userHeadPos, panels, artifactPanel);
+      this.checkPinchStart(0, hitPoint, userHeadPos, panels, artifactPanel, interactiveButtons);
     } else if (type === 'move') {
       this.handleActivePinch(0, hitPoint, userHeadPos);
     } else {

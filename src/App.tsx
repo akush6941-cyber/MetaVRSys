@@ -97,13 +97,13 @@ export default function MainApp() {
       {/* 3D WebXR MR Viewport */}
       <div
         ref={containerRef}
-        className="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing"
+        className="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing pointer-events-auto"
       />
 
       {/* Top Horizon OS Spatial Control Bar */}
       <header className="absolute top-0 left-0 right-0 p-4 md:p-6 pointer-events-none flex items-start justify-between z-20">
         <div>
-          <div className="flex items-center gap-2 mb-1 pointer-events-auto">
+          <div className="flex items-center gap-2 mb-1 pointer-events-none">
             <div className="w-8 h-8 rounded-lg bg-cyan-950/80 border border-cyan-500/40 flex items-center justify-center shadow-lg shadow-cyan-950/40 backdrop-blur-md">
               <Glasses className="w-4 h-4 text-cyan-400" />
             </div>
@@ -192,7 +192,7 @@ export default function MainApp() {
       {/* Floating Left Telemetry Bar (Horizon OS Style Glass Cards) */}
       <aside className="absolute left-4 top-24 pointer-events-none z-20 hidden md:flex flex-col gap-2.5">
         {/* MR Mode Status Card */}
-        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-1.5 w-64 shadow-2xl">
+        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-1.5 w-64 shadow-2xl pointer-events-none">
           <div className="flex items-center justify-between text-slate-400">
             <span className="flex items-center gap-1.5">
               <Glasses className="w-3.5 h-3.5 text-cyan-400" /> PASSTHROUGH
@@ -211,7 +211,7 @@ export default function MainApp() {
         </div>
 
         {/* Hand Input Telemetry */}
-        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl">
+        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl pointer-events-none">
           <div className="flex items-center justify-between text-slate-400">
             <span className="flex items-center gap-1.5">
               <Hand className="w-3.5 h-3.5 text-cyan-400" /> HAND INPUT (W3C)
@@ -236,7 +236,7 @@ export default function MainApp() {
         </div>
 
         {/* Live Workspace Summary */}
-        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl">
+        <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl pointer-events-none">
           <div className="flex items-center justify-between text-slate-400">
             <span>ACTIVE SUITE</span>
             <span className="text-cyan-400 text-[10px]">3 WINDOWS</span>

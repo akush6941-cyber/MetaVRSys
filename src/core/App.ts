@@ -95,6 +95,10 @@ export class App {
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.xr.enabled = true;
 
+    // Ensure the canvas explicitly has pointer-events: auto and touch-action: none
+    this.renderer.domElement.style.pointerEvents = 'auto';
+    this.renderer.domElement.style.touchAction = 'none';
+
     container.appendChild(this.renderer.domElement);
 
     // 4. Lighting
@@ -319,6 +323,7 @@ export class App {
     btn.style.letterSpacing = '1.5px';
     btn.style.cursor = 'pointer';
     btn.style.zIndex = '999';
+    btn.style.pointerEvents = 'auto';
     btn.style.boxShadow = '0 0 24px rgba(56, 189, 248, 0.3)';
     btn.style.transition = 'all 0.2s ease';
 
@@ -399,105 +404,171 @@ export class App {
     this.mrButtonElement = btn;
   }
 
+  public getAllInteractiveButtons(): THREE.Mesh[] {
+    return [
+      ...this.mediaPanel.getInteractiveButtons(),
+      ...this.widgetsPanel.getInteractiveButtons(),
+      ...this.artifactPanel.getInteractiveButtons(),
+    ];
+  }
+
   /**
    * Desktop mouse simulation for reviewers testing on non-VR browsers
    */
   private setupDesktopInteractions(): void {
+    // Ensure the canvas explicitly has pointer-events: auto and touch-action: none
     const dom = this.renderer.domElement;
+    dom.style.pointerEvents = 'auto';
+    dom.style.touchAction = 'none';
 
-    const getRaycastHits = (clientX: number, clientY: number) => {
-      const rect = dom.getBoundingClientRect();
-      this.mouseVec.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouseVec.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      this.raycaster.setFromCamera(this.mouseVec, this.camera);
-    };
+    window.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointerup', this.onPointerUp);
+  }
 
-    dom.addEventListener('pointerdown', (e: PointerEvent) => {
-      if (this.isInMR) return;
-      this.isMouseDown = true;
-      getRaycastHits(e.clientX, e.clientY);
+  private onPointerDown = (event: PointerEvent): void => {
+    // Only run desktop raycasting when NOT in an active WebXR session
+    if (this.renderer.xr.isPresenting) return;
 
-      const hitHandles = [
-        this.mediaPanel.topBarMesh,
-        this.mediaPanel.topBarHitbox,
-        this.mediaPanel.handleMesh,
-        this.mediaPanel.bottomBarHitbox,
-        this.widgetsPanel.topBarMesh,
-        this.widgetsPanel.topBarHitbox,
-        this.widgetsPanel.handleMesh,
-        this.widgetsPanel.bottomBarHitbox,
-        this.artifactPanel.topBarMesh,
-        this.artifactPanel.topBarHitbox,
-        this.artifactPanel.handleMesh,
-        this.artifactPanel.bottomBarHitbox,
-        this.mediaPanel.resizePinMesh,
-        this.widgetsPanel.resizePinMesh,
-        this.artifactPanel.resizePinMesh,
-        this.artifactPanel.hologramContainer,
-      ];
+    // Allow standard DOM button clicks (like ENTER MR, CINEMA MODE, RE-CENTER, Guide) to process naturally
+    if ((event.target as HTMLElement)?.closest?.('button, a, input, textarea, [role="button"]')) {
+      return;
+    }
 
-      const handleIntersects = this.raycaster.intersectObjects(hitHandles, true);
-      if (handleIntersects.length > 0) {
-        const hit = handleIntersects[0];
-        this.handController.simulateMouseInteraction(
-          hit.point,
-          'down',
-          this.camera.position,
-          [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-          this.artifactPanel
-        );
+    this.isMouseDown = true;
+
+    // Calculate normalized device coordinates (-1 to +1)
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    } else {
+      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    this.raycaster.setFromCamera(this.mouseVec, this.camera);
+    const interactiveButtons = this.getAllInteractiveButtons();
+
+    // 1. Priority 1: Interactive 3D Buttons (climb parent tree to find onClick handler)
+    const intersects = this.raycaster.intersectObjects(interactiveButtons, true);
+    if (intersects.length > 0) {
+      let target: THREE.Object3D | null = intersects[0].object;
+      while (target && !target.userData?.onClick && target.parent) {
+        target = target.parent;
+      }
+
+      if (target && typeof target.userData?.onClick === 'function') {
+        target.userData.isPressed = true;
+        target.userData.onClick();
+        this.audio.playClick(1.2);
+        this.audio.triggerHaptic(0.6, 35);
+
+        const btnMesh = (target.userData.buttonRef || target) as THREE.Mesh;
+        btnMesh.position.z = (btnMesh.userData.originalZ ?? 0.015) - 0.005;
+        setTimeout(() => {
+          btnMesh.userData.isPressed = false;
+          btnMesh.position.z = btnMesh.userData.originalZ ?? 0.015;
+        }, 120);
         return;
       }
+    }
 
-      // Check panel face click (Direct Touch UV)
-      const panelScreens = [
-        this.mediaPanel.screenMesh,
-        this.widgetsPanel.panelMesh,
-        this.artifactPanel.panelMesh,
-      ];
-      const panelIntersects = this.raycaster.intersectObjects(panelScreens, false);
+    // 2. Priority 2: Universal Grab Handles & Pins for moving/resizing windows
+    const hitHandles = [
+      this.mediaPanel.topBarMesh,
+      this.mediaPanel.topBarHitbox,
+      this.mediaPanel.handleMesh,
+      this.mediaPanel.bottomBarHitbox,
+      this.widgetsPanel.topBarMesh,
+      this.widgetsPanel.topBarHitbox,
+      this.widgetsPanel.handleMesh,
+      this.widgetsPanel.bottomBarHitbox,
+      this.artifactPanel.topBarMesh,
+      this.artifactPanel.topBarHitbox,
+      this.artifactPanel.handleMesh,
+      this.artifactPanel.bottomBarHitbox,
+      this.mediaPanel.resizePinMesh,
+      this.widgetsPanel.resizePinMesh,
+      this.artifactPanel.resizePinMesh,
+      this.artifactPanel.hologramContainer,
+    ];
 
-      if (panelIntersects.length > 0) {
-        const hit = panelIntersects[0];
-        if (hit.uv) {
-          if (hit.object === this.mediaPanel.screenMesh) {
-            this.mediaPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-          } else if (hit.object === this.widgetsPanel.panelMesh) {
-            this.widgetsPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-          } else if (hit.object === this.artifactPanel.panelMesh) {
-            this.artifactPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-          }
+    const handleIntersects = this.raycaster.intersectObjects(hitHandles, true);
+    if (handleIntersects.length > 0) {
+      const hit = handleIntersects[0];
+      this.handController.simulateMouseInteraction(
+        hit.point,
+        'down',
+        this.camera.position,
+        [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
+        this.artifactPanel,
+        interactiveButtons
+      );
+      return;
+    }
+
+    // 3. Priority 3: Panel screen interaction (Direct Touch UV for media scrubber)
+    const panelScreens = [
+      this.mediaPanel.screenMesh,
+      this.widgetsPanel.panelMesh,
+      this.artifactPanel.panelMesh,
+    ];
+    const panelIntersects = this.raycaster.intersectObjects(panelScreens, false);
+
+    if (panelIntersects.length > 0) {
+      const hit = panelIntersects[0];
+      if (hit.uv) {
+        if (hit.object === this.mediaPanel.screenMesh) {
+          this.mediaPanel.handleTouchUV(hit.uv.x, hit.uv.y);
+        } else if (hit.object === this.widgetsPanel.panelMesh) {
+          this.widgetsPanel.handleTouchUV(hit.uv.x, hit.uv.y);
+        } else if (hit.object === this.artifactPanel.panelMesh) {
+          this.artifactPanel.handleTouchUV(hit.uv.x, hit.uv.y);
         }
       }
-    });
+    }
+  };
 
-    window.addEventListener('pointermove', (e: PointerEvent) => {
-      if (this.isInMR || !this.isMouseDown) return;
-      getRaycastHits(e.clientX, e.clientY);
+  private onPointerMove = (event: PointerEvent): void => {
+    if (this.renderer.xr.isPresenting || !this.isMouseDown) return;
 
-      // Project mouse ray onto the seated 0.82m ergonomic arc sphere
-      const hitPt = this.camera.position.clone().add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
-      this.handController.simulateMouseInteraction(
-        hitPt,
-        'move',
-        this.camera.position,
-        [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-        this.artifactPanel
-      );
-    });
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    } else {
+      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
 
-    window.addEventListener('pointerup', () => {
-      if (this.isInMR) return;
-      this.isMouseDown = false;
-      this.handController.simulateMouseInteraction(
-        new THREE.Vector3(),
-        'up',
-        this.camera.position,
-        [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-        this.artifactPanel
-      );
-    });
-  }
+    this.raycaster.setFromCamera(this.mouseVec, this.camera);
+
+    // Project mouse ray onto the seated 0.82m ergonomic arc sphere
+    const hitPt = this.camera.position
+      .clone()
+      .add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
+
+    this.handController.simulateMouseInteraction(
+      hitPt,
+      'move',
+      this.camera.position,
+      [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
+      this.artifactPanel
+    );
+  };
+
+  private onPointerUp = (): void => {
+    if (this.renderer.xr.isPresenting) return;
+    this.isMouseDown = false;
+    this.handController.simulateMouseInteraction(
+      new THREE.Vector3(),
+      'up',
+      this.camera.position,
+      [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
+      this.artifactPanel
+    );
+  };
 
   private onWindowResize = (): void => {
     if (!this.container) return;
@@ -523,13 +594,16 @@ export class App {
     // Follow camera position so dimmer is always centered on user head
     this.cinemaDimmerMesh.position.copy(this.camera.position);
 
-    // 2. Update WebXR Hands and Spatial Gestures
+    // 2. Update WebXR Hands, Spatial Gestures, and 3D Interactive Buttons
+    const allInteractiveButtons = this.getAllInteractiveButtons();
+
     this.handController.update(
       delta,
       this.camera.position,
       this.mediaPanel,
       this.widgetsPanel,
-      this.artifactPanel
+      this.artifactPanel,
+      allInteractiveButtons
     );
 
     // 3. Update Panels
@@ -565,6 +639,9 @@ export class App {
 
   public destroy(): void {
     window.removeEventListener('resize', this.onWindowResize);
+    window.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointermove', this.onPointerMove);
+    window.removeEventListener('pointerup', this.onPointerUp);
     this.renderer.setAnimationLoop(null);
     if (this.renderer.domElement.parentNode) {
       this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);

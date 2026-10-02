@@ -1,20 +1,14 @@
 /**
  * ArtifactPanel - Right Tactile Holographic Companion / 3D Viewer Panel
- * Features:
- * - Floating 3D interactive holographic asset hover pedestal
- * - Single-pinch rotation in 3D space
- * - Two-hand pinch scale or corner pin scale
- * - Interactive models:
- *     1) Quantum ChronoSphere Gyroscope
- *     2) Holographic Exoplanet Gaia-9 with satellite orbit
- *     3) Aether Matrix Polyhedron
- * - Buttons: Switch Model, Auto-Spin, Explode View
- * - Pill handle for 3D window translation
- * - Corner resize pin
+ * 100% Component Encapsulated:
+ * - All meshes parented strictly to this.group
+ * - Real 3D SpatialButtons for Switch Model, Auto-Spin, and Explode View
+ * - Full WebXR fingertip poke & controller raycast select support
  */
 
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
+import { SpatialButton } from '../ui/SpatialButton';
 
 export class ArtifactPanel {
   public group: THREE.Group;
@@ -27,6 +21,14 @@ export class ArtifactPanel {
   private edgeLines: THREE.LineSegments;
   private handleMat: THREE.MeshStandardMaterial;
   private topBarMat: THREE.MeshStandardMaterial;
+
+  // Real 3D Interactive Buttons
+  public buttons: SpatialButton[] = [];
+  public interactiveButtonMeshes: THREE.Mesh[] = [];
+
+  private btnSwitch!: SpatialButton;
+  private btnAutoSpin!: SpatialButton;
+  private btnExplode!: SpatialButton;
 
   // 3D Hologram Container
   public hologramContainer: THREE.Group;
@@ -166,15 +168,82 @@ export class ArtifactPanel {
     this.resizePinMesh.position.set(this.baseWidth / 2 + 0.02, this.baseHeight / 2 + 0.02, 0.01);
     this.group.add(this.resizePinMesh);
 
-    // 2. Holographic 3D Asset Floating Pedestal in front of the panel
+    // 7. Holographic 3D Asset Floating Pedestal (Parented to this.group)
     this.hologramContainer = new THREE.Group();
-    // Position floating 0.12m in front of panel center
     this.hologramContainer.position.set(0, 0.06, 0.12);
     this.group.add(this.hologramContainer);
 
     this.build3DModels();
     this.showModel(0);
+
+    // 8. Construct Real 3D Interactive Buttons Parented Directly to this.group
+    this.build3DButtons();
+
     this.renderCanvas();
+  }
+
+  private build3DButtons(): void {
+    const btnY = -this.baseHeight / 2 + 0.055; // Y: -0.235
+    const btnZ = 0.018;
+
+    // [⚡ SWITCH]
+    this.btnSwitch = new SpatialButton({
+      width: 0.18,
+      height: 0.04,
+      label: '⚡ SWITCH',
+      color: 0x0284c7,
+      onClick: () => {
+        const next = (this.currentModelIndex + 1) % this.modelRoots.length;
+        this.showModel(next);
+        this.audio.playClick(1.2);
+      },
+    });
+    this.btnSwitch.setPosition(-0.19, btnY, btnZ);
+    this.addButton(this.btnSwitch);
+
+    // [● AUTO-SPIN]
+    this.btnAutoSpin = new SpatialButton({
+      width: 0.18,
+      height: 0.04,
+      label: '● AUTO-SPIN',
+      color: 0x10b981,
+      activeColor: 0x10b981,
+      onClick: () => {
+        this.isAutoSpin = !this.isAutoSpin;
+        this.btnAutoSpin.updateLabel(this.isAutoSpin ? '● AUTO-SPIN' : '○ PAUSED', this.isAutoSpin);
+        this.audio.playClick(this.isAutoSpin ? 1.4 : 0.8);
+      },
+    });
+    this.btnAutoSpin.setPosition(0.00, btnY, btnZ);
+    this.btnAutoSpin.updateLabel('● AUTO-SPIN', true);
+    this.addButton(this.btnAutoSpin);
+
+    // [✦ EXPLODE VIEW]
+    this.btnExplode = new SpatialButton({
+      width: 0.18,
+      height: 0.04,
+      label: '✦ EXPLODE',
+      color: 0x334155,
+      activeColor: 0xd946ef,
+      onClick: () => {
+        this.isExploded = !this.isExploded;
+        this.btnExplode.updateLabel(this.isExploded ? '✦ COLLAPSE' : '✦ EXPLODE', this.isExploded);
+        this.audio.playClick(this.isExploded ? 1.6 : 0.9);
+      },
+    });
+    this.btnExplode.setPosition(0.19, btnY, btnZ);
+    this.addButton(this.btnExplode);
+  }
+
+  private addButton(btn: SpatialButton): void {
+    this.buttons.push(btn);
+    this.interactiveButtonMeshes.push(btn.mesh);
+    // CRITICAL: Parent button directly to this.group so it moves synchronously with the window
+    this.group.add(btn.mesh);
+  }
+
+  public getInteractiveButtons(): THREE.Mesh[] {
+    return this.interactiveButtonMeshes;
   }
 
   public setGrabHighlight(active: boolean): void {
@@ -223,7 +292,6 @@ export class ArtifactPanel {
       this.gyroRings.push(mesh);
     });
 
-    // Core sphere
     const coreGeo = new THREE.IcosahedronGeometry(0.025, 2);
     const coreMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -248,7 +316,6 @@ export class ArtifactPanel {
     this.planetMesh = new THREE.Mesh(planetGeo, planetMat);
     model1.add(this.planetMesh);
 
-    // Planet Ring
     const planetRingGeo = new THREE.RingGeometry(0.09, 0.12, 32);
     const planetRingMat = new THREE.MeshBasicMaterial({
       color: 0x38bdf8,
@@ -261,7 +328,6 @@ export class ArtifactPanel {
     planetRing.rotation.x = Math.PI / 2.5;
     model1.add(planetRing);
 
-    // Orbiting Satellite
     const satGeo = new THREE.BoxGeometry(0.012, 0.012, 0.012);
     const satMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
     this.satelliteMesh = new THREE.Mesh(satGeo, satMat);
@@ -307,17 +373,14 @@ export class ArtifactPanel {
   public update(delta: number): void {
     const time = performance.now() * 0.001;
 
-    // Explode interpolation
     const targetExplode = this.isExploded ? 1.0 : 0.0;
     this.explodeFactor += (targetExplode - this.explodeFactor) * 0.1;
 
-    // Auto-spin logic
     if (this.isAutoSpin) {
       this.hologramContainer.rotation.y += 0.012;
       this.hologramContainer.rotation.x = Math.sin(time * 0.5) * 0.1;
     }
 
-    // Model 0: Gyro rings counter-rotation
     if (this.currentModelIndex === 0 && this.gyroRings.length >= 3) {
       this.gyroRings[0].rotation.x += 0.015;
       this.gyroRings[1].rotation.y += 0.022;
@@ -329,7 +392,6 @@ export class ArtifactPanel {
       this.gyroRings[2].position.set(0, 0, offset);
     }
 
-    // Model 1: Satellite Orbit
     if (this.currentModelIndex === 1 && this.satelliteMesh) {
       const orbitRadius = 0.11 + this.explodeFactor * 0.06;
       this.satelliteMesh.position.set(
@@ -339,7 +401,6 @@ export class ArtifactPanel {
       );
     }
 
-    // Model 2: Polyhedron pulsation
     if (this.currentModelIndex === 2 && this.polyOuter && this.polyInner) {
       this.polyOuter.rotation.y = time * 0.8;
       this.polyInner.rotation.x = -time * 1.2;
@@ -358,11 +419,9 @@ export class ArtifactPanel {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Window Body
     ctx.fillStyle = 'rgba(8, 14, 28, 0.9)';
     ctx.fillRect(0, 0, w, h);
 
-    // Header Bar
     ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
     ctx.fillRect(0, 0, w, 56);
 
@@ -374,9 +433,9 @@ export class ArtifactPanel {
     ctx.font = '14px monospace';
     ctx.fillStyle = '#94a3b8';
     ctx.textAlign = 'right';
-    ctx.fillText('DIRECT PINCH & ROTATE', w - 30, 36);
+    ctx.fillText('PINCH & ROTATE', w - 30, 36);
 
-    // Center Holographic Viewport Ring (Visual guidance backdrop)
+    // Viewport Guideline Circle
     ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -401,66 +460,19 @@ export class ArtifactPanel {
     ctx.textAlign = 'center';
     ctx.fillText(this.modelNames[this.currentModelIndex], w / 2, 448);
 
-    // Bottom Action Buttons (Y: 480 to 540)
-    const btnY = 500;
-    const btnH = 50;
-
-    // Button 1: [SWITCH MODEL]
-    ctx.fillStyle = '#0284c7';
-    ctx.fillRect(40, btnY, 220, btnH);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 15px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('⚡ SWITCH MODEL', 150, btnY + 31);
-
-    // Button 2: [AUTO-SPIN TOGGLE]
-    ctx.fillStyle = this.isAutoSpin ? '#10b981' : '#334155';
-    ctx.fillRect(290, btnY, 220, btnH);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(this.isAutoSpin ? '● AUTO-SPIN ON' : '○ AUTO-SPIN OFF', 400, btnY + 31);
-
-    // Button 3: [EXPLODE VIEW]
-    ctx.fillStyle = this.isExploded ? '#d946ef' : '#1e293b';
-    ctx.fillRect(540, btnY, 220, btnH);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(this.isExploded ? '✦ COLLAPSE' : '✦ EXPLODE VIEW', 650, btnY + 31);
-
-    // Bottom Instructions
     ctx.font = '13px monospace';
     ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
-    ctx.fillText('Single Pinch: Rotate Artifact · Bottom Handle: Move Window · Corner: Resize', w / 2, 600);
+    ctx.fillText('Pinch Artifact: Free Rotate · Tap 3D Buttons Below', w / 2, 600);
   }
 
-  public handleTouchUV(u: number, v: number): void {
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const x = u * w;
-    const y = (1 - v) * h;
-
-    // Action Buttons
-    const btnY = 500;
-    const btnH = 50;
-    if (y >= btnY && y <= btnY + btnH) {
-      if (x >= 40 && x <= 260) {
-        // SWITCH MODEL
-        const next = (this.currentModelIndex + 1) % this.modelRoots.length;
-        this.showModel(next);
-        this.audio.playClick(1.2);
-      } else if (x >= 290 && x <= 510) {
-        // AUTO-SPIN
-        this.isAutoSpin = !this.isAutoSpin;
-        this.audio.playClick(this.isAutoSpin ? 1.4 : 0.8);
-      } else if (x >= 540 && x <= 760) {
-        // EXPLODE
-        this.isExploded = !this.isExploded;
-        this.audio.playClick(this.isExploded ? 1.6 : 0.9);
-      }
-    }
+  public handleTouchUV(_u: number, _v: number): void {
+    // Legacy UV fallback (all clicks now handled via 3D SpatialButtons)
   }
 
   public rotateHologram(deltaX: number, deltaY: number): void {
     this.isAutoSpin = false;
+    this.btnAutoSpin.updateLabel('○ PAUSED', false);
     this.hologramContainer.rotation.y += deltaX * 3.0;
     this.hologramContainer.rotation.x += deltaY * 3.0;
   }

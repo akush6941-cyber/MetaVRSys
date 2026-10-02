@@ -2,11 +2,14 @@
  * HandController - WebXR Hand Tracking and Horizon OS Style Spatial Gesture Engine.
  * Features:
  * - W3C WebXR Hand Input specification (25 joints)
- * - Index Fingertip Micro-Halo depth feedback ring
- * - Direct Touch UV Raycaster for floating glass panels (button taps, checklist pokes)
- * - Pinch-and-Drag Window Move engine (pill handles)
- * - Pinch-and-Scale Window Resize engine (corner pins)
- * - 3D Hologram Pinch-to-Rotate engine
+ * - Universal Grab Handles: Top Title Bar AND Bottom Pill Handle (0.15m hitbox radius)
+ * - Distance-Independent Raycast / Pinch Grab (point and pinch from seated couch distance)
+ * - Real-time dynamic (x, y, z) transform locking during drag
+ * - Visual Feedback: Glowing handle/border highlight + audio/haptic click on hover
+ * - Drag Tactile Feedback: 1.02x scale feedback while holding/moving window
+ * - Direct Touch UV Raycaster for buttons & checklists
+ * - Corner Resize Pin (top-right)
+ * - 3D Hologram single-pinch rotation
  */
 
 import * as THREE from 'three';
@@ -14,6 +17,8 @@ import { AudioEngine } from '../audio/AudioEngine';
 import { MediaPanel } from '../panels/MediaPanel';
 import { WidgetsPanel } from '../panels/WidgetsPanel';
 import { ArtifactPanel } from '../panels/ArtifactPanel';
+
+export type AnySpatialPanel = MediaPanel | WidgetsPanel | ArtifactPanel;
 
 export interface HandState {
   indexTipPos: THREE.Vector3;
@@ -37,18 +42,29 @@ export class HandController {
     indexHaloMesh: THREE.Mesh;
     thumbHaloMesh: THREE.Mesh;
     pinchGlowMesh: THREE.Mesh;
+    rayPointerMesh: THREE.Mesh;
   }[] = [];
+
+  // Raycasters for distance pointing
+  private raycasters: THREE.Raycaster[] = [new THREE.Raycaster(), new THREE.Raycaster()];
+
+  // Hover tracking for audio/haptic trigger on enter
+  private hoveredPanels: (AnySpatialPanel | null)[] = [null, null];
 
   // Active Manipulations
   private activeMovePanel: {
-    panel: MediaPanel | WidgetsPanel | ArtifactPanel;
+    panel: AnySpatialPanel;
     handIndex: number;
+    initialHandPos: THREE.Vector3;
+    initialPanelPos: THREE.Vector3;
     initialOffset: THREE.Vector3;
     initialDistance: number;
+    isDistanceRay: boolean;
+    rayOffset: THREE.Vector3;
   } | null = null;
 
   private activeResizePanel: {
-    panel: MediaPanel | WidgetsPanel | ArtifactPanel;
+    panel: AnySpatialPanel;
     handIndex: number;
     initialHandPos: THREE.Vector3;
     initialScale: number;
@@ -115,7 +131,7 @@ export class HandController {
       this.scene.add(thumbHaloMesh);
 
       // Pinch Energy Spark
-      const pinchGlowGeo = new THREE.SphereGeometry(0.01, 16, 16);
+      const pinchGlowGeo = new THREE.SphereGeometry(0.012, 16, 16);
       const pinchGlowMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -126,7 +142,19 @@ export class HandController {
       pinchGlowMesh.visible = false;
       this.scene.add(pinchGlowMesh);
 
-      this.visualHalos.push({ indexHaloMesh, thumbHaloMesh, pinchGlowMesh });
+      // Distance Pointer Reticle dot
+      const pointerGeo = new THREE.SphereGeometry(0.009, 12, 12);
+      const pointerMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+      });
+      const rayPointerMesh = new THREE.Mesh(pointerGeo, pointerMat);
+      rayPointerMesh.visible = false;
+      this.scene.add(rayPointerMesh);
+
+      this.visualHalos.push({ indexHaloMesh, thumbHaloMesh, pinchGlowMesh, rayPointerMesh });
 
       hand.addEventListener('connected', (event: unknown) => {
         const xrEvent = event as { data?: { handedness?: 'left' | 'right' } };
@@ -140,6 +168,7 @@ export class HandController {
         this.visualHalos[i].indexHaloMesh.visible = false;
         this.visualHalos[i].thumbHaloMesh.visible = false;
         this.visualHalos[i].pinchGlowMesh.visible = false;
+        this.visualHalos[i].rayPointerMesh.visible = false;
         this.releaseAllGrabs(i);
       });
     }
@@ -155,14 +184,11 @@ export class HandController {
     widgetsPanel: WidgetsPanel,
     artifactPanel: ArtifactPanel
   ): void {
-    const PINCH_START = 0.025; // 25mm
-    const PINCH_END = 0.040;   // 40mm
+    // Forgiving pinch thresholds for Quest hand tracking
+    const PINCH_START = 0.028; // 28mm start
+    const PINCH_END = 0.045;   // 45mm release
 
-    const allPanels: (MediaPanel | WidgetsPanel | ArtifactPanel)[] = [
-      mediaPanel,
-      widgetsPanel,
-      artifactPanel,
-    ];
+    const allPanels: AnySpatialPanel[] = [mediaPanel, widgetsPanel, artifactPanel];
 
     for (let i = 0; i < 2; i++) {
       const hand = this.hands[i];
@@ -182,6 +208,9 @@ export class HandController {
         thumbTip.getWorldPosition(state.thumbTipPos);
         if (wrist && wrist.visible) {
           wrist.getWorldPosition(state.wristPos);
+        } else {
+          // Fallback wrist position if not reported
+          state.wristPos.copy(state.indexTipPos).sub(new THREE.Vector3(0, 0.1, 0));
         }
 
         state.pinchDistance = state.thumbTipPos.distanceTo(state.indexTipPos);
@@ -201,8 +230,6 @@ export class HandController {
         visuals.thumbHaloMesh.visible = true;
         visuals.indexHaloMesh.position.copy(state.indexTipPos);
         visuals.thumbHaloMesh.position.copy(state.thumbTipPos);
-
-        // Make index halo orient facing user head for optimal visual readability
         visuals.indexHaloMesh.lookAt(userHeadPos);
 
         if (state.isPinching) {
@@ -215,17 +242,37 @@ export class HandController {
           (visuals.indexHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0x00f0ff);
         }
 
+        // Raycast from user eye through pinch point (intuitive gaze-assisted ray)
+        const rayDir = state.pinchPoint.clone().sub(userHeadPos).normalize();
+        this.raycasters[i].set(userHeadPos, rayDir);
+
+        // Check Proximity & Ray Hover Detection (for handles & visual feedback)
+        const targetHover = this.findHoveredPanel(i, state.pinchPoint, userHeadPos, allPanels, visuals.rayPointerMesh);
+
+        // Handle entering/exiting hover highlight & tactile click
+        if (targetHover !== this.hoveredPanels[i]) {
+          if (this.hoveredPanels[i] && !this.activeMovePanel) {
+            this.hoveredPanels[i]?.setGrabHighlight(false);
+          }
+          if (targetHover && !this.activeMovePanel) {
+            targetHover.setGrabHighlight(true);
+            this.audio.playClick(1.8);
+            this.audio.triggerHaptic(0.4, 25);
+          }
+          this.hoveredPanels[i] = targetHover;
+        }
+
         // 1. Gesture: Handle Window Move Pinch
         if (state.isPinchStarted) {
-          this.checkPinchStart(i, state.pinchPoint, allPanels, artifactPanel);
+          this.checkPinchStart(i, state.pinchPoint, userHeadPos, allPanels, artifactPanel);
         } else if (state.isPinchEnded) {
           this.releaseAllGrabs(i);
         } else if (state.isPinching) {
           this.handleActivePinch(i, state.pinchPoint, userHeadPos);
         }
 
-        // 2. Gesture: Direct Index Fingertip Touch on Panels (when not pinching)
-        if (!state.isPinching) {
+        // 2. Gesture: Direct Index Fingertip Touch on Panels (when not pinching or dragging)
+        if (!state.isPinching && !this.activeMovePanel) {
           this.checkDirectFingertipTouch(i, state.indexTipPos, allPanels);
         }
       } else {
@@ -233,38 +280,88 @@ export class HandController {
         visuals.indexHaloMesh.visible = false;
         visuals.thumbHaloMesh.visible = false;
         visuals.pinchGlowMesh.visible = false;
+        visuals.rayPointerMesh.visible = false;
+        if (this.hoveredPanels[i]) {
+          this.hoveredPanels[i]?.setGrabHighlight(false);
+          this.hoveredPanels[i] = null;
+        }
         this.releaseAllGrabs(i);
       }
+    }
+  }
+
+  /**
+   * Find hovered panel via direct 0.15m proximity OR distance raycast
+   */
+  private findHoveredPanel(
+    handIndex: number,
+    pinchPoint: THREE.Vector3,
+    _userHeadPos: THREE.Vector3,
+    panels: AnySpatialPanel[],
+    pointerMesh: THREE.Mesh
+  ): AnySpatialPanel | null {
+    const PROXIMITY_RADIUS = 0.15; // 0.15m (150mm) expanded grab hitbox radius
+
+    // 1. First check Direct Proximity to Top Bar or Bottom Pill Handle
+    for (const p of panels) {
+      const topPos = new THREE.Vector3();
+      const bottomPos = new THREE.Vector3();
+      p.topBarMesh.getWorldPosition(topPos);
+      p.handleMesh.getWorldPosition(bottomPos);
+
+      const dTop = topPos.distanceTo(pinchPoint);
+      const dBottom = bottomPos.distanceTo(pinchPoint);
+
+      if (dTop <= PROXIMITY_RADIUS || dBottom <= PROXIMITY_RADIUS) {
+        pointerMesh.visible = false;
+        return p;
+      }
+    }
+
+    // 2. Second check Distance Raycast
+    const ray = this.raycasters[handIndex];
+    let closestPanel: AnySpatialPanel | null = null;
+    let closestDist = Infinity;
+    let hitLocation: THREE.Vector3 | null = null;
+
+    for (const p of panels) {
+      // Test top hitbox, bottom hitbox, and panel face
+      const targets = [p.topBarHitbox, p.bottomBarHitbox, p.topBarMesh, p.handleMesh];
+      const panelMesh = 'screenMesh' in p ? p.screenMesh : (p as WidgetsPanel).panelMesh;
+      targets.push(panelMesh);
+
+      const intersects = ray.intersectObjects(targets, true);
+      if (intersects.length > 0) {
+        const d = intersects[0].distance;
+        if (d < closestDist) {
+          closestDist = d;
+          closestPanel = p;
+          hitLocation = intersects[0].point;
+        }
+      }
+    }
+
+    if (closestPanel && hitLocation) {
+      pointerMesh.visible = true;
+      pointerMesh.position.copy(hitLocation);
+      return closestPanel;
+    } else {
+      pointerMesh.visible = false;
+      return null;
     }
   }
 
   private checkPinchStart(
     handIndex: number,
     pinchPoint: THREE.Vector3,
-    panels: (MediaPanel | WidgetsPanel | ArtifactPanel)[],
+    userHeadPos: THREE.Vector3,
+    panels: AnySpatialPanel[],
     artifactPanel: ArtifactPanel
   ): void {
-    const GRAB_RADIUS = 0.085; // 85mm handle grab radius
-    const PIN_RADIUS = 0.065;  // 65mm corner pin grab radius
+    const PROXIMITY_RADIUS = 0.15; // 0.15m (150mm) hitbox radius
+    const PIN_RADIUS = 0.085;      // 85mm corner pin grab radius
 
-    // 1. Check Window Bottom Pill Handles
-    for (const p of panels) {
-      const handleWorld = new THREE.Vector3();
-      p.handleMesh.getWorldPosition(handleWorld);
-
-      if (handleWorld.distanceTo(pinchPoint) < GRAB_RADIUS) {
-        this.activeMovePanel = {
-          panel: p,
-          handIndex,
-          initialOffset: p.group.position.clone().sub(pinchPoint),
-          initialDistance: p.group.position.distanceTo(pinchPoint),
-        };
-        this.audio.playWindowMove();
-        return;
-      }
-    }
-
-    // 2. Check Corner Resize Pins
+    // 1. Check Corner Resize Pins first (Top-Right of panels)
     for (const p of panels) {
       const pinWorld = new THREE.Vector3();
       p.resizePinMesh.getWorldPosition(pinWorld);
@@ -277,21 +374,101 @@ export class HandController {
           initialScale: p.scaleFactor,
         };
         this.audio.playClick(1.5);
+        this.audio.triggerHaptic(0.5, 30);
         return;
       }
     }
 
-    // 3. Check 3D Hologram Container on ArtifactPanel (Single pinch rotate)
+    // 2. Check 3D Hologram Container on ArtifactPanel (Single pinch rotate)
     const holoWorld = new THREE.Vector3();
     artifactPanel.hologramContainer.getWorldPosition(holoWorld);
-    if (holoWorld.distanceTo(pinchPoint) < 0.16) {
+    if (holoWorld.distanceTo(pinchPoint) < 0.18) {
       this.activeHologramPinch = {
         panel: artifactPanel,
         handIndex,
         lastPinchPos: pinchPoint.clone(),
       };
       this.audio.playClick(1.2);
+      this.audio.triggerHaptic(0.5, 25);
+      return;
     }
+
+    // 3. Direct Proximity Grab (Top Bar OR Bottom Pill Handle within 0.15m)
+    for (const p of panels) {
+      const topPos = new THREE.Vector3();
+      const bottomPos = new THREE.Vector3();
+      p.topBarMesh.getWorldPosition(topPos);
+      p.handleMesh.getWorldPosition(bottomPos);
+
+      const dTop = topPos.distanceTo(pinchPoint);
+      const dBottom = bottomPos.distanceTo(pinchPoint);
+
+      if (dTop <= PROXIMITY_RADIUS || dBottom <= PROXIMITY_RADIUS) {
+        this.startDraggingPanel(p, handIndex, pinchPoint, userHeadPos, false);
+        return;
+      }
+    }
+
+    // 4. Distance-Independent Raycast Grab (Point & Pinch from afar)
+    const ray = this.raycasters[handIndex];
+    let closestPanel: AnySpatialPanel | null = null;
+    let closestDist = Infinity;
+
+    for (const p of panels) {
+      const targets = [
+        p.topBarHitbox,
+        p.bottomBarHitbox,
+        p.topBarMesh,
+        p.handleMesh,
+        'screenMesh' in p ? p.screenMesh : (p as WidgetsPanel).panelMesh,
+      ];
+
+      const intersects = ray.intersectObjects(targets, true);
+      if (intersects.length > 0) {
+        const d = intersects[0].distance;
+        if (d < closestDist) {
+          closestDist = d;
+          closestPanel = p;
+        }
+      }
+    }
+
+    if (closestPanel) {
+      this.startDraggingPanel(closestPanel, handIndex, pinchPoint, userHeadPos, true);
+    }
+  }
+
+  private startDraggingPanel(
+    panel: AnySpatialPanel,
+    handIndex: number,
+    pinchPoint: THREE.Vector3,
+    userHeadPos: THREE.Vector3,
+    isDistanceRay: boolean
+  ): void {
+    const initialPanelPos = panel.group.position.clone();
+    const initialDistance = userHeadPos.distanceTo(initialPanelPos);
+
+    // Calculate angular ray offset so the panel doesn't jump
+    const currentRay = pinchPoint.clone().sub(userHeadPos).normalize();
+    const rayCenterPoint = userHeadPos.clone().add(currentRay.multiplyScalar(initialDistance));
+    const rayOffset = initialPanelPos.clone().sub(rayCenterPoint);
+
+    this.activeMovePanel = {
+      panel,
+      handIndex,
+      initialHandPos: pinchPoint.clone(),
+      initialPanelPos,
+      initialOffset: initialPanelPos.clone().sub(pinchPoint),
+      initialDistance,
+      isDistanceRay,
+      rayOffset,
+    };
+
+    // Visual feedback: 1.02x scale feedback and bright cyan glow
+    panel.setDraggingState(true);
+
+    this.audio.playWindowMove();
+    this.audio.triggerHaptic(0.7, 45);
   }
 
   private handleActivePinch(
@@ -299,17 +476,28 @@ export class HandController {
     pinchPoint: THREE.Vector3,
     userHeadPos: THREE.Vector3
   ): void {
-    // 1. Moving Window
+    // 1. Moving Window (Dynamic transform update on every frame)
     if (this.activeMovePanel && this.activeMovePanel.handIndex === handIndex) {
-      const p = this.activeMovePanel.panel;
-      const targetPos = pinchPoint.clone().add(this.activeMovePanel.initialOffset);
+      const drag = this.activeMovePanel;
+      const p = drag.panel;
 
-      // Smooth translation
-      p.group.position.lerp(targetPos, 0.4);
+      let targetPos: THREE.Vector3;
 
-      // Billboarding: Maintain comfortable face-forward orientation toward user head
+      if (!drag.isDistanceRay) {
+        // Direct Proximity Grab: Follow hand midpoint with relative offset
+        targetPos = pinchPoint.clone().add(drag.initialOffset);
+      } else {
+        // Distance Raycast Grab: Maintain distance along hand ray
+        const currentRay = pinchPoint.clone().sub(userHeadPos).normalize();
+        targetPos = userHeadPos.clone().add(currentRay.multiplyScalar(drag.initialDistance)).add(drag.rayOffset);
+      }
+
+      // Smooth damped translation
+      p.group.position.lerp(targetPos, 0.45);
+
+      // Horizon OS Billboarding: Stay comfortably facing the user's head position
       const lookTarget = userHeadPos.clone();
-      lookTarget.y = p.group.position.y; // Keep vertical upright
+      lookTarget.y = p.group.position.y; // Keep upright
       p.group.lookAt(lookTarget);
       return;
     }
@@ -339,7 +527,11 @@ export class HandController {
 
   private releaseAllGrabs(handIndex: number): void {
     if (this.activeMovePanel && this.activeMovePanel.handIndex === handIndex) {
+      const p = this.activeMovePanel.panel;
+      p.setDraggingState(false);
+      p.setGrabHighlight(false);
       this.audio.playWindowSnap();
+      this.audio.triggerHaptic(0.5, 30);
       this.activeMovePanel = null;
     }
     if (this.activeResizePanel && this.activeResizePanel.handIndex === handIndex) {
@@ -356,7 +548,7 @@ export class HandController {
   private checkDirectFingertipTouch(
     handIndex: number,
     indexTipPos: THREE.Vector3,
-    panels: (MediaPanel | WidgetsPanel | ArtifactPanel)[]
+    panels: AnySpatialPanel[]
   ): void {
     let touchedAny = false;
 
@@ -364,13 +556,10 @@ export class HandController {
       const panelMesh =
         'screenMesh' in panel ? panel.screenMesh : (panel as WidgetsPanel).panelMesh;
 
-      // Transform tip to panel local coordinates
       const localTip = panelMesh.worldToLocal(indexTipPos.clone());
-
       const halfW = panel.baseWidth / 2;
       const halfH = panel.baseHeight / 2;
 
-      // Check within panel bounding rectangle
       if (
         localTip.x >= -halfW &&
         localTip.x <= halfW &&
@@ -384,7 +573,6 @@ export class HandController {
           if (!this.wasTouchingPanel[handIndex]) {
             this.wasTouchingPanel[handIndex] = true;
 
-            // Calculate UV coordinates (0..1, 0..1)
             const u = (localTip.x + halfW) / panel.baseWidth;
             const v = (localTip.y + halfH) / panel.baseHeight;
 
@@ -408,11 +596,11 @@ export class HandController {
     hitPoint: THREE.Vector3,
     type: 'down' | 'move' | 'up',
     userHeadPos: THREE.Vector3,
-    panels: (MediaPanel | WidgetsPanel | ArtifactPanel)[],
+    panels: AnySpatialPanel[],
     artifactPanel: ArtifactPanel
   ): void {
     if (type === 'down') {
-      this.checkPinchStart(0, hitPoint, panels, artifactPanel);
+      this.checkPinchStart(0, hitPoint, userHeadPos, panels, artifactPanel);
     } else if (type === 'move') {
       this.handleActivePinch(0, hitPoint, userHeadPos);
     } else {

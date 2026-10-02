@@ -409,9 +409,18 @@ export class App {
       getRaycastHits(e.clientX, e.clientY);
 
       const hitHandles = [
+        this.mediaPanel.topBarMesh,
+        this.mediaPanel.topBarHitbox,
         this.mediaPanel.handleMesh,
+        this.mediaPanel.bottomBarHitbox,
+        this.widgetsPanel.topBarMesh,
+        this.widgetsPanel.topBarHitbox,
         this.widgetsPanel.handleMesh,
+        this.widgetsPanel.bottomBarHitbox,
+        this.artifactPanel.topBarMesh,
+        this.artifactPanel.topBarHitbox,
         this.artifactPanel.handleMesh,
+        this.artifactPanel.bottomBarHitbox,
         this.mediaPanel.resizePinMesh,
         this.widgetsPanel.resizePinMesh,
         this.artifactPanel.resizePinMesh,

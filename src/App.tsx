@@ -298,7 +298,7 @@ export default function MainApp() {
                     <strong className="text-slate-200">Tap / Direct Poke:</strong> Touch buttons on any panel directly with your index fingertip. Visual micro-halos guide your depth.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Pinch Pill Handle to Move:</strong> Pinch the cyan cylindrical bar beneath any window to move it freely in your physical room.
+                    <strong className="text-slate-200">Move Window (Top Title Bar or Bottom Handle):</strong> Pinch the top header rail or bottom pill bar to move any window. Supports direct pinch (0.15m hitbox) OR pointing with your hand ray from a distance!
                   </li>
                   <li>
                     <strong className="text-slate-200">Pinch Corner Pin to Resize:</strong> Pinch the glowing spherical pin at the top-right corner to scale windows up or down.
@@ -350,7 +350,7 @@ export default function MainApp() {
       {/* Bottom Hint */}
       <footer className="absolute bottom-2 left-0 right-0 pointer-events-none flex flex-col items-center gap-1 z-20">
         <p className="text-[11px] text-slate-400 font-mono text-center px-4 bg-slate-950/60 py-0.5 rounded-full backdrop-blur-sm">
-          Meta Quest 3 / Quest 3S: Click "ENTER MR / PASSTHROUGH" · Desktop: Click & Drag Pill Handles / Buttons
+          Meta Quest 3 / Quest 3S: Click "ENTER MR / PASSTHROUGH" · Move: Pinch Top/Bottom Handles (Direct or Ray)
         </p>
       </footer>
     </div>

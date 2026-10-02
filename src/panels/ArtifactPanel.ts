@@ -20,7 +20,13 @@ export class ArtifactPanel {
   public group: THREE.Group;
   public panelMesh: THREE.Mesh;
   public handleMesh: THREE.Mesh;
+  public topBarMesh: THREE.Mesh;
+  public topBarHitbox: THREE.Mesh;
+  public bottomBarHitbox: THREE.Mesh;
   public resizePinMesh: THREE.Mesh;
+  private edgeLines: THREE.LineSegments;
+  private handleMat: THREE.MeshStandardMaterial;
+  private topBarMat: THREE.MeshStandardMaterial;
 
   // 3D Hologram Container
   public hologramContainer: THREE.Group;
@@ -47,6 +53,8 @@ export class ArtifactPanel {
   public baseWidth: number = 0.68;
   public baseHeight: number = 0.58;
   public scaleFactor: number = 1.0;
+  public isDragging: boolean = false;
+  public isHovered: boolean = false;
 
   public readonly modelNames = [
     'QUANTUM CHRONOSPHERE',
@@ -101,25 +109,52 @@ export class ArtifactPanel {
       transparent: true,
       opacity: 0.35,
     });
-    const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
-    this.group.add(edgeLines);
+    this.edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+    this.group.add(this.edgeLines);
 
-    // Pill Handle
-    const handleGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.22, 16);
-    const handleMat = new THREE.MeshStandardMaterial({
+    // 4. Horizon OS Top Title Bar (Active Grab Target)
+    const topBarGeo = new THREE.CylinderGeometry(0.009, 0.009, this.baseWidth * 0.72, 16);
+    this.topBarMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x0284c7,
       emissiveIntensity: 0.4,
       metalness: 0.9,
       roughness: 0.2,
     });
-    this.handleMesh = new THREE.Mesh(handleGeo, handleMat);
+    this.topBarMesh = new THREE.Mesh(topBarGeo, this.topBarMat);
+    this.topBarMesh.rotation.z = Math.PI / 2;
+    this.topBarMesh.position.set(0, this.baseHeight / 2 + 0.038, 0.01);
+    this.group.add(this.topBarMesh);
+
+    // Top Bar 0.15m Hitbox
+    const topHitGeo = new THREE.BoxGeometry(this.baseWidth * 0.85, 0.16, 0.16);
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    this.topBarHitbox = new THREE.Mesh(topHitGeo, hitMat);
+    this.topBarHitbox.position.copy(this.topBarMesh.position);
+    this.group.add(this.topBarHitbox);
+
+    // 5. Pill Handle (Bottom Active Grab Target)
+    const handleGeo = new THREE.CylinderGeometry(0.009, 0.009, this.baseWidth * 0.55, 16);
+    this.handleMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      emissive: 0x0284c7,
+      emissiveIntensity: 0.4,
+      metalness: 0.9,
+      roughness: 0.2,
+    });
+    this.handleMesh = new THREE.Mesh(handleGeo, this.handleMat);
     this.handleMesh.rotation.z = Math.PI / 2;
-    this.handleMesh.position.set(0, -this.baseHeight / 2 - 0.035, 0.01);
+    this.handleMesh.position.set(0, -this.baseHeight / 2 - 0.038, 0.01);
     this.group.add(this.handleMesh);
 
-    // Corner Resize Pin
-    const pinGeo = new THREE.SphereGeometry(0.015, 16, 16);
+    // Bottom Bar 0.15m Hitbox
+    const bottomHitGeo = new THREE.BoxGeometry(this.baseWidth * 0.75, 0.16, 0.16);
+    this.bottomBarHitbox = new THREE.Mesh(bottomHitGeo, hitMat);
+    this.bottomBarHitbox.position.copy(this.handleMesh.position);
+    this.group.add(this.bottomBarHitbox);
+
+    // 6. Corner Resize Pin
+    const pinGeo = new THREE.SphereGeometry(0.018, 16, 16);
     const pinMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x00f0ff,
@@ -140,6 +175,32 @@ export class ArtifactPanel {
     this.build3DModels();
     this.showModel(0);
     this.renderCanvas();
+  }
+
+  public setGrabHighlight(active: boolean): void {
+    this.isHovered = active;
+    const targetColor = active ? 0x00ffff : 0x38bdf8;
+    const targetEmissive = active ? 0x00f0ff : 0x0284c7;
+    const intensity = active ? 1.4 : 0.4;
+
+    this.handleMat.color.setHex(targetColor);
+    this.handleMat.emissive.setHex(targetEmissive);
+    this.handleMat.emissiveIntensity = intensity;
+
+    this.topBarMat.color.setHex(targetColor);
+    this.topBarMat.emissive.setHex(targetEmissive);
+    this.topBarMat.emissiveIntensity = intensity;
+
+    (this.edgeLines.material as THREE.LineBasicMaterial).color.setHex(active ? 0x00ffff : 0x00f0ff);
+    (this.edgeLines.material as THREE.LineBasicMaterial).opacity = active ? 0.85 : 0.35;
+  }
+
+  public setDraggingState(dragging: boolean): void {
+    this.isDragging = dragging;
+    const multiplier = dragging ? 1.02 : 1.0;
+    const s = this.scaleFactor * multiplier;
+    this.group.scale.set(s, s, s);
+    this.setGrabHighlight(dragging);
   }
 
   private build3DModels(): void {
@@ -407,6 +468,8 @@ export class ArtifactPanel {
   public setScale(factor: number): void {
     const clamped = Math.max(0.6, Math.min(2.0, factor));
     this.scaleFactor = clamped;
-    this.group.scale.set(clamped, clamped, clamped);
+    const mult = this.isDragging ? 1.02 : 1.0;
+    const finalScale = clamped * mult;
+    this.group.scale.set(finalScale, finalScale, finalScale);
   }
 }

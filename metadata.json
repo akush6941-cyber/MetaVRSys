@@ -1,0 +1,6 @@
+{
+  "name": "ChronoSphere: Spatial Core",
+  "description": "Seated hands-first WebXR spatial puzzle and kinetic core for Meta Quest browsers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

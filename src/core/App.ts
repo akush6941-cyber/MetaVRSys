@@ -46,7 +46,7 @@ export class App {
 
   // Desktop Passthrough Simulator Environment
   private roomSimGroup: THREE.Group;
-  public isPassthroughSimActive: boolean = true;
+  public isPassthroughSimActive: boolean = false;
 
   public isInMR: boolean = false;
   private container: HTMLElement;
@@ -107,8 +107,9 @@ export class App {
     this.cinemaDimmerMesh = this.buildCinemaDimmer();
     this.scene.add(this.cinemaDimmerMesh);
 
-    // 7. Desktop Room Simulator (preview on desktop)
+    // 7. Desktop Room Simulator (disabled by default for clean passthrough)
     this.roomSimGroup = this.buildRoomSimulator();
+    this.roomSimGroup.visible = false;
     this.scene.add(this.roomSimGroup);
 
     // 8. Build Center Cinema Screen & Left Web Deck Screen
@@ -118,8 +119,8 @@ export class App {
 
     this.webDeckPanel = new WebDeckPanel(this.audio);
 
-    this.scene.add(this.cinemaPanel.group);
-    this.scene.add(this.webDeckPanel.group);
+    this.scene.add(this.cinemaPanel.mediaScreenGroup);
+    this.scene.add(this.webDeckPanel.dashboardGroup);
 
     // Initial position setup
     this.resetWorkspacePositions();
@@ -207,17 +208,17 @@ export class App {
 
   /**
    * Reset panels to comfortable seated ergonomic wrap-around cockpit (eye level 1.25m, arm reach 0.75m)
-   * Dashboard Group: position.set(-0.45, 1.25, -0.75), rotation.y = 0.28
-   * Media Screen Group: position.set(0.45, 1.25, -0.75), rotation.y = -0.28
+   * Dashboard Group: position.set(-0.48, 1.25, -0.75), rotation.y = 0.32
+   * Media Screen Group: position.set(0.48, 1.25, -0.75), rotation.y = -0.32
    */
   public resetWorkspacePositions(): void {
-    // Dashboard Group
-    this.webDeckPanel.group.position.set(-0.45, 1.25, -0.75);
-    this.webDeckPanel.group.rotation.set(0, 0.28, 0);
+    // Dashboard Component Structure
+    this.webDeckPanel.dashboardGroup.position.set(-0.48, 1.25, -0.75);
+    this.webDeckPanel.dashboardGroup.rotation.set(0, 0.32, 0);
 
-    // Media Screen Group
-    this.cinemaPanel.group.position.set(0.45, 1.25, -0.75);
-    this.cinemaPanel.group.rotation.set(0, -0.28, 0);
+    // Media Player Component Structure
+    this.cinemaPanel.mediaScreenGroup.position.set(0.48, 1.25, -0.75);
+    this.cinemaPanel.mediaScreenGroup.rotation.set(0, -0.32, 0);
 
     this.audio.playWindowSnap();
   }

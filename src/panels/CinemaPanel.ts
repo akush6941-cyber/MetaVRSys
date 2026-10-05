@@ -162,7 +162,7 @@ export class CinemaPanel {
     // 5. Floating Interactive Control Dock (directly beneath video screen)
     const mediaControlDock = new THREE.Group();
     mediaControlDock.name = 'MediaControlDock';
-    mediaControlDock.position.set(0, -0.42, 0.04);
+    mediaControlDock.position.set(0, -0.42, 0.05);
     mediaControlDock.rotation.set(0, 0, 0);
     this.controlDock = mediaControlDock;
 
@@ -254,7 +254,7 @@ export class CinemaPanel {
 
     // 6. Bottom Pill Handle Bar (Active Grab Target for 3D Repositioning)
     const handleY = -0.49;
-    const handleZ = 0.04;
+    const handleZ = 0.05;
     const handleGeo = new THREE.CylinderGeometry(0.008, 0.008, this.baseWidth * 0.6, 16);
     const handleMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -280,9 +280,9 @@ export class CinemaPanel {
     };
     this.mediaScreenGroup.add(this.handleHitbox);
 
-    // 2. Seated Arc Cockpit Alignment: Media Screen Group at x: 0.45, y: 1.25, z: -0.75, rotation.y: -0.28
-    this.mediaScreenGroup.position.set(0.45, 1.25, -0.75);
-    this.mediaScreenGroup.rotation.set(0, -0.28, 0);
+    // 2. Seated Arc Cockpit Alignment: Media Screen Group at x: 0.48, y: 1.25, z: -0.75, rotation.y: -0.32
+    this.mediaScreenGroup.position.set(0.48, 1.25, -0.75);
+    this.mediaScreenGroup.rotation.set(0, -0.32, 0);
   }
 
   /**

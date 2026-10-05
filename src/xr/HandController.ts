@@ -98,6 +98,7 @@ export class HandController {
       });
       const indexHaloMesh = new THREE.Mesh(ringGeo, haloMat);
       indexHaloMesh.visible = false;
+      indexHaloMesh.position.set(0, -999, 0);
       this.scene.add(indexHaloMesh);
 
       // Thumb Contact Dot
@@ -109,6 +110,7 @@ export class HandController {
       });
       const thumbHaloMesh = new THREE.Mesh(thumbGeo, thumbMat);
       thumbHaloMesh.visible = false;
+      thumbHaloMesh.position.set(0, -999, 0);
       this.scene.add(thumbHaloMesh);
 
       // Pinch Energy Spark
@@ -121,6 +123,7 @@ export class HandController {
       });
       const pinchGlowMesh = new THREE.Mesh(pinchGlowGeo, pinchGlowMat);
       pinchGlowMesh.visible = false;
+      pinchGlowMesh.position.set(0, -999, 0);
       this.scene.add(pinchGlowMesh);
 
       // Distance Pointer Reticle dot
@@ -133,6 +136,7 @@ export class HandController {
       });
       const rayPointerMesh = new THREE.Mesh(pointerGeo, pointerMat);
       rayPointerMesh.visible = false;
+      rayPointerMesh.position.set(0, -999, 0);
       this.scene.add(rayPointerMesh);
 
       this.visualHalos.push({ indexHaloMesh, thumbHaloMesh, pinchGlowMesh, rayPointerMesh });

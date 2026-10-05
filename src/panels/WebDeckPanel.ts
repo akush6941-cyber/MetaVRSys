@@ -36,6 +36,7 @@ export interface DevFeatureToggle {
 }
 
 export class WebDeckPanel {
+  public dashboardGroup: THREE.Group;
   public group: THREE.Group;
   public screenMesh: THREE.Mesh;
   public handleMesh: THREE.Mesh;
@@ -116,7 +117,9 @@ export class WebDeckPanel {
 
   constructor(audio: AudioEngine) {
     this.audio = audio;
-    this.group = new THREE.Group();
+    this.dashboardGroup = new THREE.Group();
+    this.dashboardGroup.name = 'DashboardGroup';
+    this.group = this.dashboardGroup;
 
     // 1. Setup High-DPI Canvas for Crisp VR Text Legibility (1024x768)
     this.canvas = document.createElement('canvas');
@@ -236,9 +239,9 @@ export class WebDeckPanel {
     this.updateTabVisuals();
     this.renderCanvas();
 
-    // 2. Seated Arc Cockpit Alignment: Dashboard Group at x: -0.45, y: 1.25, z: -0.75, rotation.y: 0.28
-    this.group.position.set(-0.45, 1.25, -0.75);
-    this.group.rotation.set(0, 0.28, 0);
+    // 2. Seated Arc Cockpit Alignment: Dashboard Group at x: -0.48, y: 1.25, z: -0.75, rotation.y: 0.32
+    this.dashboardGroup.position.set(-0.48, 1.25, -0.75);
+    this.dashboardGroup.rotation.set(0, 0.32, 0);
   }
 
   private createTabPill(title: string, width: number, onClick: () => void): THREE.Mesh {

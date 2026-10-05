@@ -366,7 +366,7 @@ export class HandController {
     const hits = ray.intersectObjects(interactiveMeshes, true);
     if (hits.length > 0) {
       let target: THREE.Object3D | null = hits[0].object;
-      while (target && !target.userData?.onTrigger && !target.userData?.panelGroup && target.parent) {
+      while (target && !target.userData?.onClick && !target.userData?.onTrigger && !target.userData?.panelGroup && target.parent) {
         target = target.parent;
       }
 

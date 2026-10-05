@@ -139,17 +139,20 @@ export class WebDeckPanel {
     this.group.add(this.screenMesh);
 
     // Screen Mesh is interactive: clicking/poking passes normalized UV coordinates
+    const screenTouchHandler = (_point?: THREE.Vector3, uv?: THREE.Vector2) => {
+      if (uv) {
+        this.handleCanvasTouch(uv.x, uv.y);
+      }
+    };
+
     this.screenMesh.userData = {
       id: 'webdeck-screen',
       type: 'screen',
       width: this.baseWidth,
       height: this.baseHeight,
       depth: 0.015,
-      onTrigger: (_point?: THREE.Vector3, uv?: THREE.Vector2) => {
-        if (uv) {
-          this.handleCanvasTouch(uv.x, uv.y);
-        }
-      },
+      onClick: screenTouchHandler,
+      onTrigger: screenTouchHandler,
     };
 
     // 3. Frosted Glass Backing Plate
@@ -292,6 +295,10 @@ export class WebDeckPanel {
 
     updateLabel(title, false);
 
+    const tabHandler = () => {
+      onClick();
+    };
+
     mesh.userData = {
       id: `tab-${title}`,
       type: 'tab',
@@ -299,7 +306,8 @@ export class WebDeckPanel {
       height,
       depth,
       originalZ: 0.014,
-      onTrigger: onClick,
+      onClick: tabHandler,
+      onTrigger: tabHandler,
       updateLabel,
       title,
     };

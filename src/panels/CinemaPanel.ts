@@ -117,6 +117,9 @@ export class CinemaPanel {
       width: this.baseWidth,
       height: this.baseHeight,
       depth: 0.02,
+      onClick: () => {
+        this.togglePlay();
+      },
       onTrigger: () => {
         this.togglePlay();
       },
@@ -179,6 +182,13 @@ export class CinemaPanel {
     });
     this.scrubberTrack = new THREE.Mesh(trackGeo, trackMat);
     this.scrubberTrack.position.set(-0.04, dockY, dockZ);
+    const scrubberAction = (point?: THREE.Vector3) => {
+      if (!point) return;
+      const local = this.scrubberTrack.worldToLocal(point.clone());
+      const norm = THREE.MathUtils.clamp((local.x + trackWidth / 2) / trackWidth, 0, 1);
+      this.seek(norm);
+    };
+
     this.scrubberTrack.userData = {
       id: 'cinema-scrubber',
       type: 'scrubber',
@@ -186,12 +196,8 @@ export class CinemaPanel {
       height: trackHeight,
       depth: 0.01,
       originalZ: dockZ,
-      onTrigger: (point?: THREE.Vector3) => {
-        if (!point) return;
-        const local = this.scrubberTrack.worldToLocal(point.clone());
-        const norm = THREE.MathUtils.clamp((local.x + trackWidth / 2) / trackWidth, 0, 1);
-        this.seek(norm);
-      },
+      onClick: scrubberAction,
+      onTrigger: scrubberAction,
     };
     this.group.add(this.scrubberTrack);
 
@@ -328,6 +334,10 @@ export class CinemaPanel {
 
     updateLabel(label);
 
+    const clickHandler = () => {
+      onClick();
+    };
+
     mesh.userData = {
       id: `btn-${label}`,
       type: 'button',
@@ -335,7 +345,8 @@ export class CinemaPanel {
       height,
       depth,
       originalZ: 0.02,
-      onTrigger: onClick,
+      onClick: clickHandler,
+      onTrigger: clickHandler,
       updateLabel,
     };
 

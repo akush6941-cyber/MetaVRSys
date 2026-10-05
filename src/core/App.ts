@@ -272,8 +272,13 @@ export class App {
     ];
   }
 
+  // Alias for interactiveButtons
+  public getAllInteractiveButtons(): THREE.Mesh[] {
+    return this.getAllInteractiveMeshes();
+  }
+
   /**
-   * Universal Pointerdown (2D Desktop Fallback Engine)
+   * Dual-Mode Input Pipeline: Standard Desktop 2D Raycasting
    */
   private setupDesktopInteractions(): void {
     window.addEventListener('pointerdown', this.onPointerDown);
@@ -282,17 +287,17 @@ export class App {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
-    // Only run desktop raycasting when NOT in an active WebXR session
+    // 1. Only run desktop raycasting when NOT in an active WebXR session
     if (this.renderer.xr.isPresenting) return;
 
-    // Allow standard DOM HTML buttons (like ENTER MR, CINEMA MODE, RE-CENTER) to work naturally
+    // Allow standard DOM HTML elements (like header buttons or modal close) to work naturally
     if ((event.target as HTMLElement)?.closest('button, a, input, textarea, [role="button"]')) {
       return;
     }
 
     this.isMouseDown = true;
 
-    // Calculate normalized device coordinates (-1 to +1)
+    // 2. Calculate normalized device coordinates (-1 to +1)
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -303,52 +308,54 @@ export class App {
     }
 
     this.raycaster.setFromCamera(this.mouseVec, this.camera);
-    const interactiveMeshes = this.getAllInteractiveMeshes();
+    const interactiveButtons = this.getAllInteractiveMeshes();
 
-    // 1. Raycast against interactive elements (Buttons, Scrubber, Tabs, Screens, Handles)
-    const intersects = this.raycaster.intersectObjects(interactiveMeshes, true);
+    // 3. Intersect against interactive buttons & screens
+    const intersects = this.raycaster.intersectObjects(interactiveButtons, true);
 
     if (intersects.length > 0) {
       const hit = intersects[0];
       let target: THREE.Object3D | null = hit.object;
 
-      // Climb parent tree to find object with onTrigger or handle
-      while (target && !target.userData?.onTrigger && !target.userData?.panelGroup && target.parent) {
+      // Check if clicked element or its parent is a handle for window dragging
+      let handleCandidate: THREE.Object3D | null = target;
+      while (handleCandidate && handleCandidate.userData?.type !== 'handle' && handleCandidate.parent) {
+        handleCandidate = handleCandidate.parent;
+      }
+      if (handleCandidate && handleCandidate.userData?.type === 'handle' && handleCandidate.userData.panelGroup) {
+        this.renderer.domElement.style.cursor = 'grabbing';
+        this.handController.simulateMouseInteraction(
+          hit.point,
+          'down',
+          this.camera.position,
+          interactiveButtons
+        );
+        return;
+      }
+
+      // Find the button or screen object with onClick / onTrigger handler
+      while (target && !target.userData?.onClick && !target.userData?.onTrigger && target.parent) {
         target = target.parent;
       }
 
-      if (target) {
-        // If handle hit -> start dragging window with mouse
-        if (target.userData.type === 'handle' && target.userData.panelGroup) {
-          this.handController.simulateMouseInteraction(
-            hit.point,
-            'down',
-            this.camera.position,
-            interactiveMeshes
-          );
-          return;
-        }
+      const clickHandler = target?.userData?.onClick || target?.userData?.onTrigger;
+      if (target && typeof clickHandler === 'function') {
+        // Visual button depression feedback
+        const origZ = target.userData.originalZ ?? target.position.z;
+        target.position.z = origZ - 0.006;
+        setTimeout(() => {
+          if (target) target.position.z = origZ;
+        }, 120);
 
-        // If interactive button or screen hit -> trigger action
-        const triggerFn = target.userData.onTrigger || target.userData.onClick;
-        if (typeof triggerFn === 'function') {
-          // Visual depression feedback
-          const origZ = target.userData.originalZ ?? target.position.z;
-          target.position.z = origZ - 0.006;
-          setTimeout(() => {
-            if (target) target.position.z = origZ;
-          }, 120);
-
-          this.audio.playClick(1.2);
-          triggerFn(hit.point, hit.uv);
-          return;
-        }
+        this.audio.playClick(1.2);
+        clickHandler(hit.point, hit.uv);
+        return;
       }
     }
   };
 
   private onPointerMove = (event: PointerEvent): void => {
-    if (this.renderer.xr.isPresenting || !this.isMouseDown) return;
+    if (this.renderer.xr.isPresenting) return;
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -360,22 +367,46 @@ export class App {
     }
 
     this.raycaster.setFromCamera(this.mouseVec, this.camera);
+    const interactiveButtons = this.getAllInteractiveMeshes();
 
-    const hitPt = this.camera.position
-      .clone()
-      .add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
+    // If mouse is down, simulate handle drag
+    if (this.isMouseDown) {
+      const hitPt = this.camera.position
+        .clone()
+        .add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
 
-    this.handController.simulateMouseInteraction(
-      hitPt,
-      'move',
-      this.camera.position,
-      this.getAllInteractiveMeshes()
-    );
+      this.handController.simulateMouseInteraction(
+        hitPt,
+        'move',
+        this.camera.position,
+        interactiveButtons
+      );
+      return;
+    }
+
+    // Dynamic Hover Cursor for Desktop Experience
+    const intersects = this.raycaster.intersectObjects(interactiveButtons, true);
+    if (intersects.length > 0) {
+      let target: THREE.Object3D | null = intersects[0].object;
+      while (target && !target.userData?.type && !target.userData?.onClick && !target.userData?.onTrigger && target.parent) {
+        target = target.parent;
+      }
+      if (target?.userData?.type === 'handle') {
+        this.renderer.domElement.style.cursor = 'grab';
+      } else if (target?.userData?.onClick || target?.userData?.onTrigger || target?.userData?.type === 'screen' || target?.userData?.type === 'button') {
+        this.renderer.domElement.style.cursor = 'pointer';
+      } else {
+        this.renderer.domElement.style.cursor = 'default';
+      }
+    } else {
+      this.renderer.domElement.style.cursor = 'default';
+    }
   };
 
   private onPointerUp = (): void => {
     if (this.renderer.xr.isPresenting) return;
     this.isMouseDown = false;
+    this.renderer.domElement.style.cursor = 'default';
     this.handController.simulateMouseInteraction(
       new THREE.Vector3(),
       'up',

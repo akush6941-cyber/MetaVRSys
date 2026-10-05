@@ -1,30 +1,26 @@
 /**
- * App - Main Spatial Computing Engine for "AetherDesk MR"
- * Standards:
- * - Meta Horizon OS Mixed Reality Architecture
- * - Pure Room Passthrough (immersive-ar with local-floor and hand-tracking)
- * - Cinema Mode Room Dimmer Dome
- * - Seated/Couch Ergonomic Arc (0.6m - 1.2m reachable zone)
- * - Triple-Panel Glassmorphic Workspace
- * - Desktop Passthrough Simulator for non-VR reviewers
+ * App - Main Spatial Computing Engine for AetherDesk MR
+ * Features:
+ * - VisionOS / Horizon OS Spatial Architecture
+ * - Center Screen: "Spatial Cinema Player" (Curved 16:9 screen, HTML5 Video, Floating Dock)
+ * - Left Screen: "Spatial Web Deck" (Simulated Browser Experience, 3D Tab Pills, Interactive Canvas Content)
+ * - Bulletproof Interactive Touch & Click Engine (2D Pointerdown + WebXR Direct Fingertip Poke)
+ * - Seated Ergonomic 0.85m Arc with Synchronous Transform & Locked Pitch/Roll
  */
 
 import * as THREE from 'three';
 import { AudioEngine } from '../audio/AudioEngine';
 import { HandController } from '../xr/HandController';
-import { MediaPanel } from '../panels/MediaPanel';
-import { WidgetsPanel } from '../panels/WidgetsPanel';
-import { ArtifactPanel } from '../panels/ArtifactPanel';
+import { CinemaPanel } from '../panels/CinemaPanel';
+import { WebDeckPanel } from '../panels/WebDeckPanel';
 
 export interface AppStateUpdate {
   isInMR: boolean;
   isCinemaMode: boolean;
-  activeChannelName: string;
-  isTimerRunning: boolean;
+  isVideoPlaying: boolean;
+  activeWebTab: string;
   pomodoroRemainingSec: number;
   completedTasksCount: number;
-  totalTasksCount: number;
-  activeModelName: string;
   isAudioEnabled: boolean;
   leftHandTracked: boolean;
   rightHandTracked: boolean;
@@ -39,10 +35,9 @@ export class App {
   public audio: AudioEngine;
   public handController: HandController;
 
-  // Triple-Panel Workspace
-  public mediaPanel: MediaPanel;
-  public widgetsPanel: WidgetsPanel;
-  public artifactPanel: ArtifactPanel;
+  // Spatial Screens
+  public cinemaPanel: CinemaPanel;
+  public webDeckPanel: WebDeckPanel;
 
   // Cinema Mode Room Dimmer Dome
   private cinemaDimmerMesh: THREE.Mesh;
@@ -61,7 +56,7 @@ export class App {
   private clock: THREE.Clock;
   private onStateChange?: (state: AppStateUpdate) => void;
 
-  // Desktop interaction raycaster
+  // Desktop Interaction
   private raycaster: THREE.Raycaster;
   private mouseVec: THREE.Vector2;
   private isMouseDown: boolean = false;
@@ -73,7 +68,7 @@ export class App {
     this.onStateChange = onStateChange;
     this.clock = new THREE.Clock();
 
-    // 1. Scene Setup (Alpha true for MR Passthrough)
+    // 1. Scene Setup (Alpha: true for pure room passthrough)
     this.scene = new THREE.Scene();
 
     // 2. Camera at Seated Position (0, 1.2, 0)
@@ -85,19 +80,23 @@ export class App {
     // 3. WebGLRenderer configured for WebXR Passthrough
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      alpha: true, // Crucial for real room passthrough
+      alpha: true, // Passthrough transparent background
       powerPreference: 'high-performance',
     });
-    this.renderer.setClearColor(0x000000, 0); // Transparent canvas background
+    this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.xr.enabled = true;
 
-    // Ensure the canvas explicitly has pointer-events: auto and touch-action: none
+    // Ensure the canvas explicitly accepts pointer events
     this.renderer.domElement.style.pointerEvents = 'auto';
     this.renderer.domElement.style.touchAction = 'none';
+    this.renderer.domElement.style.position = 'absolute';
+    this.renderer.domElement.style.inset = '0';
+    this.renderer.domElement.style.width = '100%';
+    this.renderer.domElement.style.height = '100%';
 
     container.appendChild(this.renderer.domElement);
 
@@ -107,11 +106,11 @@ export class App {
     // 5. Audio Synthesizer
     this.audio = new AudioEngine();
 
-    // 6. Cinema Dimmer Dome (Inverted sphere around user)
+    // 6. Cinema Dimmer Dome (Inverted sphere around seated user)
     this.cinemaDimmerMesh = this.buildCinemaDimmer();
     this.scene.add(this.cinemaDimmerMesh);
 
-    // 7. Desktop Room Simulator (Chic minimal living room for desktop preview)
+    // 7. Desktop Room Simulator (preview on desktop)
     this.roomSimGroup = this.buildRoomSimulator();
     this.scene.add(this.roomSimGroup);
 
@@ -119,25 +118,23 @@ export class App {
     this.reachArcMesh = this.buildReachArc();
     this.scene.add(this.reachArcMesh);
 
-    // 9. Build Triple-Panel Spatial Workspace
-    this.mediaPanel = new MediaPanel(this.audio, (active) => {
+    // 9. Build Center Cinema Screen & Left Web Deck Screen
+    this.cinemaPanel = new CinemaPanel(this.audio, (active) => {
       this.cinemaDimmerTargetOpacity = active ? 0.92 : 0.0;
     });
 
-    this.widgetsPanel = new WidgetsPanel(this.audio);
-    this.artifactPanel = new ArtifactPanel(this.audio);
+    this.webDeckPanel = new WebDeckPanel(this.audio);
 
-    this.scene.add(this.mediaPanel.group);
-    this.scene.add(this.widgetsPanel.group);
-    this.scene.add(this.artifactPanel.group);
+    this.scene.add(this.cinemaPanel.group);
+    this.scene.add(this.webDeckPanel.group);
 
-    // Position panels in comfortable ergonomic seated arc
+    // Initial position setup
     this.resetWorkspacePositions();
 
     // 10. WebXR Hand Controller Engine
     this.handController = new HandController(this.scene, this.renderer, this.audio);
 
-    // 11. Desktop Mouse Interactions
+    // 11. Desktop Mouse Interactions (Universal Pointerdown 2D Engine)
     this.raycaster = new THREE.Raycaster();
     this.mouseVec = new THREE.Vector2();
     this.setupDesktopInteractions();
@@ -151,28 +148,22 @@ export class App {
   }
 
   private setupLighting(): void {
-    // Soft ambient light
-    const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+    const ambient = new THREE.AmbientLight(0xffffff, 1.4);
     this.scene.add(ambient);
 
-    // Directional ceiling light
-    const sun = new THREE.DirectionalLight(0xfff7ed, 1.6);
+    const sun = new THREE.DirectionalLight(0xfff7ed, 1.8);
     sun.position.set(0.5, 3.0, 1.0);
     this.scene.add(sun);
 
-    // Subtle cyan backlight for glass panels
-    const backGlow = new THREE.PointLight(0x00f0ff, 1.2, 3.0);
-    backGlow.position.set(0, 1.5, -1.5);
+    const backGlow = new THREE.PointLight(0x00f0ff, 1.5, 3.5);
+    backGlow.position.set(0, 1.5, -1.6);
     this.scene.add(backGlow);
   }
 
-  /**
-   * Cinema Mode Dimmer: Inverted sphere that fades to black in the user's room
-   */
   private buildCinemaDimmer(): THREE.Mesh {
     const geo = new THREE.SphereGeometry(6.0, 32, 32);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0x020408,
+      color: 0x010307,
       side: THREE.BackSide,
       transparent: true,
       opacity: 0.0,
@@ -183,28 +174,24 @@ export class App {
     return mesh;
   }
 
-  /**
-   * Desktop Passthrough Simulator (Renders a realistic living room environment on non-VR monitors)
-   */
   private buildRoomSimulator(): THREE.Group {
     const group = new THREE.Group();
 
     // Wood floor
     const floorGeo = new THREE.PlaneGeometry(12, 12);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x1e1b18,
-      roughness: 0.8,
+      color: 0x181512,
+      roughness: 0.85,
       metalness: 0.1,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = 0;
     group.add(floor);
 
-    // Soft modern rug under seated area
-    const rugGeo = new THREE.PlaneGeometry(3.2, 3.2);
+    // Soft rug
+    const rugGeo = new THREE.PlaneGeometry(3.4, 3.4);
     const rugMat = new THREE.MeshStandardMaterial({
-      color: 0x27272a,
+      color: 0x222226,
       roughness: 0.95,
       metalness: 0.0,
     });
@@ -213,30 +200,18 @@ export class App {
     rug.position.set(0, 0.005, -0.6);
     group.add(rug);
 
-    // Minimalist walls
+    // Modern back wall
     const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x18181b,
+      color: 0x141418,
       roughness: 0.9,
     });
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(12, 6), wallMat);
     backWall.position.set(0, 3, -3.8);
     group.add(backWall);
 
-    // Subtle modern window frame showing night skyline
-    const windowGeo = new THREE.PlaneGeometry(4.5, 3.0);
-    const windowMat = new THREE.MeshBasicMaterial({
-      color: 0x090d16,
-    });
-    const windowMesh = new THREE.Mesh(windowGeo, windowMat);
-    windowMesh.position.set(0, 2.6, -3.78);
-    group.add(windowMesh);
-
     return group;
   }
 
-  /**
-   * Seated Reach Arc Visualizer (Subtle floor curve at 0.85m)
-   */
   private buildReachArc(): THREE.Line {
     const points: THREE.Vector3[] = [];
     const radius = 0.85;
@@ -258,38 +233,25 @@ export class App {
   public resetWorkspacePositions(): void {
     const userEye = new THREE.Vector3(0, 1.2, 0);
 
-    // Center Media Panel: straight ahead at -0.85m
-    this.mediaPanel.group.position.set(0, 1.22, -0.85);
-    const lookTargetCenter = new THREE.Vector3(userEye.x, 1.22, userEye.z);
-    this.mediaPanel.group.lookAt(lookTargetCenter);
-    this.mediaPanel.group.rotation.x = 0;
-    this.mediaPanel.group.rotation.z = 0;
+    // Center Screen: Cinema Player straight ahead at -0.85m
+    this.cinemaPanel.group.position.set(0, 1.2, -0.85);
+    const lookCenter = new THREE.Vector3(userEye.x, 1.2, userEye.z);
+    this.cinemaPanel.group.lookAt(lookCenter);
+    this.cinemaPanel.group.rotation.x = 0;
+    this.cinemaPanel.group.rotation.z = 0;
 
-    // Left Widgets Panel: 32 deg left
-    const leftAngle = THREE.MathUtils.degToRad(-32);
+    // Left Screen: Web Deck at 30 deg left (0.82m reach)
+    const leftAngle = THREE.MathUtils.degToRad(-30);
     const leftDist = 0.82;
-    this.widgetsPanel.group.position.set(
+    this.webDeckPanel.group.position.set(
       Math.sin(leftAngle) * leftDist,
-      1.18,
+      1.2,
       -Math.cos(leftAngle) * leftDist
     );
-    const lookTargetLeft = new THREE.Vector3(userEye.x, 1.18, userEye.z);
-    this.widgetsPanel.group.lookAt(lookTargetLeft);
-    this.widgetsPanel.group.rotation.x = 0;
-    this.widgetsPanel.group.rotation.z = 0;
-
-    // Right Artifact Panel: 32 deg right
-    const rightAngle = THREE.MathUtils.degToRad(32);
-    const rightDist = 0.82;
-    this.artifactPanel.group.position.set(
-      Math.sin(rightAngle) * rightDist,
-      1.18,
-      -Math.cos(rightAngle) * rightDist
-    );
-    const lookTargetRight = new THREE.Vector3(userEye.x, 1.18, userEye.z);
-    this.artifactPanel.group.lookAt(lookTargetRight);
-    this.artifactPanel.group.rotation.x = 0;
-    this.artifactPanel.group.rotation.z = 0;
+    const lookLeft = new THREE.Vector3(userEye.x, 1.2, userEye.z);
+    this.webDeckPanel.group.lookAt(lookLeft);
+    this.webDeckPanel.group.rotation.x = 0;
+    this.webDeckPanel.group.rotation.z = 0;
 
     this.audio.playWindowSnap();
   }
@@ -301,8 +263,136 @@ export class App {
   }
 
   /**
-   * Official WebXR Session Launcher: Supports immersive-ar (Pure Passthrough) & immersive-vr fallback
+   * Unified Interactive Meshes for 2D Raycast and WebXR Fingertip Poke
    */
+  public getAllInteractiveMeshes(): THREE.Mesh[] {
+    return [
+      ...this.cinemaPanel.getInteractiveMeshes(),
+      ...this.webDeckPanel.getInteractiveMeshes(),
+    ];
+  }
+
+  /**
+   * Universal Pointerdown (2D Desktop Fallback Engine)
+   */
+  private setupDesktopInteractions(): void {
+    window.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointerup', this.onPointerUp);
+  }
+
+  private onPointerDown = (event: PointerEvent): void => {
+    // Only run desktop raycasting when NOT in an active WebXR session
+    if (this.renderer.xr.isPresenting) return;
+
+    // Allow standard DOM HTML buttons (like ENTER MR, CINEMA MODE, RE-CENTER) to work naturally
+    if ((event.target as HTMLElement)?.closest('button, a, input, textarea, [role="button"]')) {
+      return;
+    }
+
+    this.isMouseDown = true;
+
+    // Calculate normalized device coordinates (-1 to +1)
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    } else {
+      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    this.raycaster.setFromCamera(this.mouseVec, this.camera);
+    const interactiveMeshes = this.getAllInteractiveMeshes();
+
+    // 1. Raycast against interactive elements (Buttons, Scrubber, Tabs, Screens, Handles)
+    const intersects = this.raycaster.intersectObjects(interactiveMeshes, true);
+
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      let target: THREE.Object3D | null = hit.object;
+
+      // Climb parent tree to find object with onTrigger or handle
+      while (target && !target.userData?.onTrigger && !target.userData?.panelGroup && target.parent) {
+        target = target.parent;
+      }
+
+      if (target) {
+        // If handle hit -> start dragging window with mouse
+        if (target.userData.type === 'handle' && target.userData.panelGroup) {
+          this.handController.simulateMouseInteraction(
+            hit.point,
+            'down',
+            this.camera.position,
+            interactiveMeshes
+          );
+          return;
+        }
+
+        // If interactive button or screen hit -> trigger action
+        const triggerFn = target.userData.onTrigger || target.userData.onClick;
+        if (typeof triggerFn === 'function') {
+          // Visual depression feedback
+          const origZ = target.userData.originalZ ?? target.position.z;
+          target.position.z = origZ - 0.006;
+          setTimeout(() => {
+            if (target) target.position.z = origZ;
+          }, 120);
+
+          this.audio.playClick(1.2);
+          triggerFn(hit.point, hit.uv);
+          return;
+        }
+      }
+    }
+  };
+
+  private onPointerMove = (event: PointerEvent): void => {
+    if (this.renderer.xr.isPresenting || !this.isMouseDown) return;
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    } else {
+      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    this.raycaster.setFromCamera(this.mouseVec, this.camera);
+
+    const hitPt = this.camera.position
+      .clone()
+      .add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
+
+    this.handController.simulateMouseInteraction(
+      hitPt,
+      'move',
+      this.camera.position,
+      this.getAllInteractiveMeshes()
+    );
+  };
+
+  private onPointerUp = (): void => {
+    if (this.renderer.xr.isPresenting) return;
+    this.isMouseDown = false;
+    this.handController.simulateMouseInteraction(
+      new THREE.Vector3(),
+      'up',
+      this.camera.position,
+      this.getAllInteractiveMeshes()
+    );
+  };
+
+  private onWindowResize = (): void => {
+    if (!this.container) return;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(w, h);
+  };
+
   private setupMREntryButton(): void {
     const btn = document.createElement('button');
     btn.id = 'enter-mr-button';
@@ -334,7 +424,6 @@ export class App {
       this.isInMR = true;
       btn.textContent = 'EXIT MR';
 
-      // Hide desktop room simulator in real passthrough
       this.roomSimGroup.visible = false;
       this.renderer.setClearColor(0x000000, 0);
     };
@@ -347,7 +436,6 @@ export class App {
       this.isInMR = false;
       btn.textContent = 'ENTER MR / PASSTHROUGH';
 
-      // Restore desktop room simulator if active
       this.roomSimGroup.visible = this.isPassthroughSimActive;
     };
 
@@ -368,7 +456,6 @@ export class App {
       };
 
       try {
-        // Try native immersive-ar first (Pure Quest Passthrough)
         const isArSupported = await navigator.xr.isSessionSupported('immersive-ar');
         if (isArSupported) {
           const session = await navigator.xr.requestSession('immersive-ar', sessionOptions);
@@ -376,7 +463,6 @@ export class App {
           return;
         }
 
-        // Fallback to immersive-vr with transparent background
         const isVrSupported = await navigator.xr.isSessionSupported('immersive-vr');
         if (isVrSupported) {
           const session = await navigator.xr.requestSession('immersive-vr', sessionOptions);
@@ -387,7 +473,6 @@ export class App {
         alert('Immersive AR/VR is not supported on this device.');
       } catch (err) {
         console.error('Failed to launch WebXR session:', err);
-        // Retry with optional features only
         try {
           const session = await navigator.xr.requestSession('immersive-vr', {
             optionalFeatures: ['local-floor', 'hand-tracking'],
@@ -404,181 +489,6 @@ export class App {
     this.mrButtonElement = btn;
   }
 
-  public getAllInteractiveButtons(): THREE.Mesh[] {
-    return [
-      ...this.mediaPanel.getInteractiveButtons(),
-      ...this.widgetsPanel.getInteractiveButtons(),
-      ...this.artifactPanel.getInteractiveButtons(),
-    ];
-  }
-
-  /**
-   * Desktop mouse simulation for reviewers testing on non-VR browsers
-   */
-  private setupDesktopInteractions(): void {
-    // Ensure the canvas explicitly has pointer-events: auto and touch-action: none
-    const dom = this.renderer.domElement;
-    dom.style.pointerEvents = 'auto';
-    dom.style.touchAction = 'none';
-
-    window.addEventListener('pointerdown', this.onPointerDown);
-    window.addEventListener('pointermove', this.onPointerMove);
-    window.addEventListener('pointerup', this.onPointerUp);
-  }
-
-  private onPointerDown = (event: PointerEvent): void => {
-    // Only run desktop raycasting when NOT in an active WebXR session
-    if (this.renderer.xr.isPresenting) return;
-
-    // Allow standard DOM button clicks (like ENTER MR, CINEMA MODE, RE-CENTER, Guide) to process naturally
-    if ((event.target as HTMLElement)?.closest?.('button, a, input, textarea, [role="button"]')) {
-      return;
-    }
-
-    this.isMouseDown = true;
-
-    // Calculate normalized device coordinates (-1 to +1)
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    } else {
-      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
-      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    }
-
-    this.raycaster.setFromCamera(this.mouseVec, this.camera);
-    const interactiveButtons = this.getAllInteractiveButtons();
-
-    // 1. Priority 1: Interactive 3D Buttons (climb parent tree to find onClick handler)
-    const intersects = this.raycaster.intersectObjects(interactiveButtons, true);
-    if (intersects.length > 0) {
-      let target: THREE.Object3D | null = intersects[0].object;
-      while (target && !target.userData?.onClick && target.parent) {
-        target = target.parent;
-      }
-
-      if (target && typeof target.userData?.onClick === 'function') {
-        target.userData.isPressed = true;
-        target.userData.onClick();
-        this.audio.playClick(1.2);
-        this.audio.triggerHaptic(0.6, 35);
-
-        const btnMesh = (target.userData.buttonRef || target) as THREE.Mesh;
-        btnMesh.position.z = (btnMesh.userData.originalZ ?? 0.015) - 0.005;
-        setTimeout(() => {
-          btnMesh.userData.isPressed = false;
-          btnMesh.position.z = btnMesh.userData.originalZ ?? 0.015;
-        }, 120);
-        return;
-      }
-    }
-
-    // 2. Priority 2: Universal Grab Handles & Pins for moving/resizing windows
-    const hitHandles = [
-      this.mediaPanel.topBarMesh,
-      this.mediaPanel.topBarHitbox,
-      this.mediaPanel.handleMesh,
-      this.mediaPanel.bottomBarHitbox,
-      this.widgetsPanel.topBarMesh,
-      this.widgetsPanel.topBarHitbox,
-      this.widgetsPanel.handleMesh,
-      this.widgetsPanel.bottomBarHitbox,
-      this.artifactPanel.topBarMesh,
-      this.artifactPanel.topBarHitbox,
-      this.artifactPanel.handleMesh,
-      this.artifactPanel.bottomBarHitbox,
-      this.mediaPanel.resizePinMesh,
-      this.widgetsPanel.resizePinMesh,
-      this.artifactPanel.resizePinMesh,
-      this.artifactPanel.hologramContainer,
-    ];
-
-    const handleIntersects = this.raycaster.intersectObjects(hitHandles, true);
-    if (handleIntersects.length > 0) {
-      const hit = handleIntersects[0];
-      this.handController.simulateMouseInteraction(
-        hit.point,
-        'down',
-        this.camera.position,
-        [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-        this.artifactPanel,
-        interactiveButtons
-      );
-      return;
-    }
-
-    // 3. Priority 3: Panel screen interaction (Direct Touch UV for media scrubber)
-    const panelScreens = [
-      this.mediaPanel.screenMesh,
-      this.widgetsPanel.panelMesh,
-      this.artifactPanel.panelMesh,
-    ];
-    const panelIntersects = this.raycaster.intersectObjects(panelScreens, false);
-
-    if (panelIntersects.length > 0) {
-      const hit = panelIntersects[0];
-      if (hit.uv) {
-        if (hit.object === this.mediaPanel.screenMesh) {
-          this.mediaPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-        } else if (hit.object === this.widgetsPanel.panelMesh) {
-          this.widgetsPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-        } else if (hit.object === this.artifactPanel.panelMesh) {
-          this.artifactPanel.handleTouchUV(hit.uv.x, hit.uv.y);
-        }
-      }
-    }
-  };
-
-  private onPointerMove = (event: PointerEvent): void => {
-    if (this.renderer.xr.isPresenting || !this.isMouseDown) return;
-
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      this.mouseVec.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.mouseVec.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    } else {
-      this.mouseVec.x = (event.clientX / window.innerWidth) * 2 - 1;
-      this.mouseVec.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    }
-
-    this.raycaster.setFromCamera(this.mouseVec, this.camera);
-
-    // Project mouse ray onto the seated 0.82m ergonomic arc sphere
-    const hitPt = this.camera.position
-      .clone()
-      .add(this.raycaster.ray.direction.clone().multiplyScalar(0.82));
-
-    this.handController.simulateMouseInteraction(
-      hitPt,
-      'move',
-      this.camera.position,
-      [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-      this.artifactPanel
-    );
-  };
-
-  private onPointerUp = (): void => {
-    if (this.renderer.xr.isPresenting) return;
-    this.isMouseDown = false;
-    this.handController.simulateMouseInteraction(
-      new THREE.Vector3(),
-      'up',
-      this.camera.position,
-      [this.mediaPanel, this.widgetsPanel, this.artifactPanel],
-      this.artifactPanel
-    );
-  };
-
-  private onWindowResize = (): void => {
-    if (!this.container) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
-  };
-
   /**
    * Main per-frame render loop (72/90/120 FPS target)
    */
@@ -591,25 +501,15 @@ export class App {
     (this.cinemaDimmerMesh.material as THREE.MeshBasicMaterial).opacity =
       this.cinemaDimmerCurrentOpacity;
 
-    // Follow camera position so dimmer is always centered on user head
     this.cinemaDimmerMesh.position.copy(this.camera.position);
 
-    // 2. Update WebXR Hands, Spatial Gestures, and 3D Interactive Buttons
-    const allInteractiveButtons = this.getAllInteractiveButtons();
-
-    this.handController.update(
-      delta,
-      this.camera.position,
-      this.mediaPanel,
-      this.widgetsPanel,
-      this.artifactPanel,
-      allInteractiveButtons
-    );
+    // 2. Update WebXR Hands and Direct Fingertip Poke Engine
+    const interactiveMeshes = this.getAllInteractiveMeshes();
+    this.handController.update(delta, this.camera.position, interactiveMeshes);
 
     // 3. Update Panels
-    this.mediaPanel.update(delta);
-    this.widgetsPanel.update(delta);
-    this.artifactPanel.update(delta);
+    this.cinemaPanel.update(delta);
+    this.webDeckPanel.update(delta);
 
     // 4. Render Three.js Scene
     this.renderer.render(this.scene, this.camera);
@@ -618,17 +518,15 @@ export class App {
     if (this.onStateChange) {
       const leftTracked = this.handController.handStates[0].isTracked;
       const rightTracked = this.handController.handStates[1].isTracked;
-      const completedTasks = this.widgetsPanel.tasks.filter((t) => t.completed).length;
+      const completedTasks = this.webDeckPanel.tasks.filter((t) => t.completed).length;
 
       this.onStateChange({
         isInMR: this.isInMR,
-        isCinemaMode: this.mediaPanel.isCinemaMode,
-        activeChannelName: this.mediaPanel.channels[this.mediaPanel.currentChannel],
-        isTimerRunning: this.widgetsPanel.isTimerRunning,
-        pomodoroRemainingSec: Math.round(this.widgetsPanel.pomodoroRemainingSec),
+        isCinemaMode: this.cinemaPanel.isCinemaMode,
+        isVideoPlaying: this.cinemaPanel.isPlaying,
+        activeWebTab: this.webDeckPanel.activeTab,
+        pomodoroRemainingSec: Math.round(this.webDeckPanel.pomodoroRemainingSec),
         completedTasksCount: completedTasks,
-        totalTasksCount: this.widgetsPanel.tasks.length,
-        activeModelName: this.artifactPanel.modelNames[0],
         isAudioEnabled: this.audio.getSoundEnabled(),
         leftHandTracked: leftTracked,
         rightHandTracked: rightTracked,

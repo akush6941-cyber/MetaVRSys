@@ -1,13 +1,10 @@
 /**
  * AetherDesk MR: Spatial Command & Immersive Media Suite
- * Production-ready Horizon OS Mixed Reality (WebXR Passthrough) Experience
- * - Pure Room Passthrough & Ambient Lighting
- * - Seated/Couch Ergonomic Arc (0.6m - 1.2m reachable zone)
- * - 100% Hands-First Direct Touch & Pinch Navigation
- * - Triple-Panel Glassmorphic Workspace:
- *     1. Center: Immersive Media Player & Cinema Mode Dimmer
- *     2. Left: Daily Flow (Pomodoro Focus & Objectives Checklist)
- *     3. Right: Tactile Holographic Companion (Pinch-to-Rotate 3D Viewer)
+ * Production-ready Horizon OS / VisionOS Mixed Reality WebXR Workspace
+ * - Center Screen: "Spatial Cinema Player" (Curved 16:9 screen, HTML5 Video, Floating Dock)
+ * - Left Screen: "Spatial Web Deck" (Simulated Browser Experience, 3D Tab Pills, Interactive Canvas Content)
+ * - Bulletproof Interactive Touch & Click Engine (2D Desktop Pointerdown + WebXR Direct Fingertip Poke)
+ * - Seated Ergonomic 0.85m Arc with Synchronous Transform & Locked Pitch/Roll
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -19,14 +16,13 @@ import {
   RotateCcw,
   Volume2,
   VolumeX,
-  Sparkles,
   Info,
-  CheckCircle2,
   Tv,
-  CheckSquare,
-  Box,
+  Globe,
   Eye,
-  EyeOff
+  EyeOff,
+  Play,
+  Pause
 } from 'lucide-react';
 
 export default function MainApp() {
@@ -36,12 +32,10 @@ export default function MainApp() {
   const [state, setState] = useState<AppStateUpdate>({
     isInMR: false,
     isCinemaMode: false,
-    activeChannelName: 'CYBER WAVE SPECTRUM',
-    isTimerRunning: false,
+    isVideoPlaying: false,
+    activeWebTab: 'dashboard',
     pomodoroRemainingSec: 25 * 60,
     completedTasksCount: 2,
-    totalTasksCount: 4,
-    activeModelName: 'QUANTUM CHRONOSPHERE',
     isAudioEnabled: true,
     leftHandTracked: false,
     rightHandTracked: false,
@@ -69,7 +63,11 @@ export default function MainApp() {
   };
 
   const handleToggleCinema = () => {
-    appRef.current?.mediaPanel.toggleCinemaMode();
+    appRef.current?.cinemaPanel.toggleCinema();
+  };
+
+  const handleToggleVideo = () => {
+    appRef.current?.cinemaPanel.togglePlay();
   };
 
   const handleToggleAudio = () => {
@@ -112,7 +110,7 @@ export default function MainApp() {
                 AETHERDESK <span className="text-white text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30">MR</span>
               </h1>
               <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
-                Spatial Command & Immersive Media Suite · Horizon OS Standards
+                Spatial Media & Web Workspace · Horizon OS / VisionOS Standards
               </p>
             </div>
           </div>
@@ -133,6 +131,22 @@ export default function MainApp() {
             <Maximize2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">
               {state.isCinemaMode ? 'CINEMA ACTIVE' : 'CINEMA MODE'}
+            </span>
+          </button>
+
+          {/* Video Quick Play/Pause */}
+          <button
+            onClick={handleToggleVideo}
+            className={`px-3 py-1.5 text-xs font-mono rounded-lg border backdrop-blur-md flex items-center gap-1.5 transition-all shadow-md ${
+              state.isVideoPlaying
+                ? 'bg-cyan-950/80 border-cyan-400 text-cyan-300'
+                : 'bg-slate-900/80 border-slate-700/60 text-slate-400 hover:bg-slate-800'
+            }`}
+            title="Toggle Video Playback"
+          >
+            {state.isVideoPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+            <span className="hidden md:inline">
+              {state.isVideoPlaying ? 'PAUSE VIDEO' : 'PLAY VIDEO'}
             </span>
           </button>
 
@@ -198,12 +212,12 @@ export default function MainApp() {
               <Glasses className="w-3.5 h-3.5 text-cyan-400" /> PASSTHROUGH
             </span>
             <span className={state.isInMR ? 'text-emerald-400 font-bold' : 'text-cyan-400'}>
-              {state.isInMR ? '● ROOM AR ACTIVE' : 'DESKTOP SIM'}
+              {state.isInMR ? '● ROOM AR ACTIVE' : 'DESKTOP 2D'}
             </span>
           </div>
           <div className="flex justify-between text-[11px] text-slate-400">
             <span>Seated Arc: 0.85m</span>
-            <span className="text-emerald-400">Couch Ready</span>
+            <span className="text-emerald-400">Comfort Certified</span>
           </div>
           <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
             <div className="bg-cyan-400 h-full w-[85%]" />
@@ -214,22 +228,22 @@ export default function MainApp() {
         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl pointer-events-none">
           <div className="flex items-center justify-between text-slate-400">
             <span className="flex items-center gap-1.5">
-              <Hand className="w-3.5 h-3.5 text-cyan-400" /> HAND INPUT (W3C)
+              <Hand className="w-3.5 h-3.5 text-cyan-400" /> HAND ENGINE (W3C)
             </span>
-            <span className="text-[10px] text-slate-400">NO CONTROLLER</span>
+            <span className="text-[10px] text-emerald-400 font-bold">POKE &lt; 0.02M</span>
           </div>
 
           <div className="space-y-1 text-[11px]">
             <div className="flex items-center justify-between text-slate-400">
               <span>Left Hand:</span>
               <span className={state.leftHandTracked ? 'text-emerald-400' : 'text-slate-400'}>
-                {state.leftHandTracked ? 'TRACKED (HALO)' : 'WAITING'}
+                {state.leftHandTracked ? 'INDEX TIP ACTIVE' : 'STANDBY'}
               </span>
             </div>
             <div className="flex items-center justify-between text-slate-400">
               <span>Right Hand:</span>
               <span className={state.rightHandTracked ? 'text-emerald-400' : 'text-slate-400'}>
-                {state.rightHandTracked ? 'TRACKED (HALO)' : 'WAITING'}
+                {state.rightHandTracked ? 'INDEX TIP ACTIVE' : 'STANDBY'}
               </span>
             </div>
           </div>
@@ -238,32 +252,32 @@ export default function MainApp() {
         {/* Live Workspace Summary */}
         <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 backdrop-blur-lg text-xs font-mono space-y-2 w-64 shadow-2xl pointer-events-none">
           <div className="flex items-center justify-between text-slate-400">
-            <span>ACTIVE SUITE</span>
-            <span className="text-cyan-400 text-[10px]">3 WINDOWS</span>
+            <span>SPATIAL WORKSPACE</span>
+            <span className="text-cyan-400 text-[10px]">2 SCREENS</span>
           </div>
 
           <div className="space-y-1.5 text-[11px]">
             <div className="flex items-center justify-between text-slate-300">
               <span className="flex items-center gap-1 text-slate-400">
-                <Tv className="w-3 h-3 text-cyan-400" /> Center:
+                <Tv className="w-3 h-3 text-cyan-400" /> Cinema:
               </span>
               <span className="truncate max-w-[130px] text-cyan-200">
-                {state.activeChannelName}
+                {state.isVideoPlaying ? '▶ PLAYING 4K' : '⏸ PAUSED'}
               </span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span className="flex items-center gap-1 text-slate-400">
-                <CheckSquare className="w-3 h-3 text-emerald-400" /> Focus:
+                <Globe className="w-3 h-3 text-emerald-400" /> Web Deck:
               </span>
-              <span className="text-emerald-300">
-                {formatSec(state.pomodoroRemainingSec)} ({state.completedTasksCount}/{state.totalTasksCount})
+              <span className="text-emerald-300 uppercase">
+                {state.activeWebTab}
               </span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
-              <span className="flex items-center gap-1 text-slate-400">
-                <Box className="w-3 h-3 text-purple-400" /> Artifact:
+              <span className="text-slate-400">Focus Timer:</span>
+              <span className="text-cyan-300 font-mono">
+                {formatSec(state.pomodoroRemainingSec)} ({state.completedTasksCount}/4)
               </span>
-              <span className="text-purple-300">3D Hologram</span>
             </div>
           </div>
         </div>
@@ -277,7 +291,7 @@ export default function MainApp() {
               <div className="flex items-center gap-2">
                 <Glasses className="w-5 h-5 text-cyan-400" />
                 <span className="text-sm font-bold tracking-wide text-cyan-300">
-                  AETHERDESK MR // USER GUIDE
+                  SPATIAL MEDIA & WEB WORKSPACE // GUIDE
                 </span>
               </div>
               <button
@@ -291,49 +305,47 @@ export default function MainApp() {
             <div className="space-y-3.5 text-slate-300 leading-relaxed max-h-[70vh] overflow-y-auto pr-2">
               <div>
                 <p className="text-cyan-400 font-bold mb-1 flex items-center gap-1.5">
-                  <Hand className="w-4 h-4" /> 1. Direct Touch & Hand Interactions:
+                  <Tv className="w-4 h-4" /> 1. Center Screen: Spatial Cinema Player:
                 </p>
                 <ul className="list-disc list-inside text-slate-400 space-y-1">
                   <li>
-                    <strong className="text-slate-200">Tap / Direct Poke:</strong> Touch buttons on any panel directly with your index fingertip. Visual micro-halos guide your depth.
+                    <strong className="text-slate-200">Curved 16:9 Display:</strong> Powered by HTML5 video texture with high-FPS visualizer fallback.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Move Window (Top Title Bar or Bottom Handle):</strong> Pinch the top header rail or bottom pill bar to move any window. Supports direct pinch (0.15m hitbox) OR pointing with your hand ray from a distance!
+                    <strong className="text-slate-200">Interactive Control Dock:</strong> Tap/poke [▶ PLAY], click/drag the time scrubber bar to seek, toggle volume, or activate Cinema Dimmer.
                   </li>
                   <li>
-                    <strong className="text-slate-200">Pinch Corner Pin to Resize:</strong> Pinch the glowing spherical pin at the top-right corner to scale windows up or down.
-                  </li>
-                  <li>
-                    <strong className="text-slate-200">Pinch 3D Artifact:</strong> Pinch the floating holographic asset on the right panel to spin and inspect it in 3D.
+                    <strong className="text-slate-200">Direct Screen Tap:</strong> Tap anywhere on the curved video display to toggle play/pause instantly!
                   </li>
                 </ul>
               </div>
 
               <div>
                 <p className="text-cyan-400 font-bold mb-1 flex items-center gap-1.5">
-                  <Maximize2 className="w-4 h-4" /> 2. Cinema Mode Dimmer:
+                  <Globe className="w-4 h-4" /> 2. Left Screen: Spatial Web Deck:
                 </p>
-                <p className="text-slate-400">
-                  Tap "CINEMA MODE" to gradually dim your real physical room with an ambient spatial vignette, expanding the media player into an IMAX curved screen.
-                </p>
+                <ul className="list-disc list-inside text-slate-400 space-y-1">
+                  <li>
+                    <strong className="text-slate-200">3D Navigation Tabs:</strong> Tap [📊 DASHBOARD], [🔥 TRENDING], or [⚡ DEV DOCS] to switch views and URLs.
+                  </li>
+                  <li>
+                    <strong className="text-slate-200">Interactive Canvas Content:</strong> Tap checkboxes to toggle objectives, poke bookmark cards, or switch developer toggles.
+                  </li>
+                </ul>
               </div>
 
               <div>
                 <p className="text-cyan-400 font-bold mb-1 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> 3. Seated Couch Ergonomics:
+                  <Hand className="w-4 h-4" /> 3. Dual-Mode Input (2D Desktop + WebXR Hands):
                 </p>
-                <p className="text-slate-400">
-                  All 3 panels are curved along a 0.85m arc (0.6m - 1.2m reachable zone). You can sit comfortably without leaning forward. Tap "RE-CENTER" anytime to reset window positions.
-                </p>
-              </div>
-
-              <div>
-                <p className="text-cyan-400 font-bold mb-1 flex items-center gap-1.5">
-                  <Glasses className="w-4 h-4" /> 4. Meta Quest Browser Launch:
-                </p>
-                <p className="text-slate-400">
-                  Click <strong className="text-cyan-300">ENTER MR / PASSTHROUGH</strong> below. Your physical room will appear instantly with zero controllers needed.
-                </p>
+                <ul className="list-disc list-inside text-slate-400 space-y-1">
+                  <li>
+                    <strong className="text-slate-200">2D Desktop:</strong> Direct mouse clicks on any button, scrubber, tab, or screen execute immediately. Click and drag bottom pill handles to move windows.
+                  </li>
+                  <li>
+                    <strong className="text-slate-200">WebXR Hand Input:</strong> Direct fingertip poke (&lt; 0.02m) with tactile Z-compression and audio feedback, or pinch handles from seated distance.
+                  </li>
+                </ul>
               </div>
             </div>
 
@@ -349,8 +361,8 @@ export default function MainApp() {
 
       {/* Bottom Hint */}
       <footer className="absolute bottom-2 left-0 right-0 pointer-events-none flex flex-col items-center gap-1 z-20">
-        <p className="text-[11px] text-slate-400 font-mono text-center px-4 bg-slate-950/60 py-0.5 rounded-full backdrop-blur-sm">
-          Meta Quest 3 / Quest 3S: Click "ENTER MR / PASSTHROUGH" · Move: Pinch Top/Bottom Handles (Direct or Ray)
+        <p className="text-[11px] text-slate-400 font-mono text-center px-4 bg-slate-950/60 py-0.5 rounded-full backdrop-blur-sm pointer-events-none">
+          Meta Quest 3 / Quest 3S: Click "ENTER MR / PASSTHROUGH" · Tap screen or dock buttons to control media & web
         </p>
       </footer>
     </div>

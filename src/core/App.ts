@@ -48,9 +48,6 @@ export class App {
   private roomSimGroup: THREE.Group;
   public isPassthroughSimActive: boolean = true;
 
-  // Seated Reach Arc Visualizer
-  private reachArcMesh: THREE.Line;
-
   public isInMR: boolean = false;
   private container: HTMLElement;
   private clock: THREE.Clock;
@@ -114,11 +111,7 @@ export class App {
     this.roomSimGroup = this.buildRoomSimulator();
     this.scene.add(this.roomSimGroup);
 
-    // 8. Seated 0.85m Arc Visualizer
-    this.reachArcMesh = this.buildReachArc();
-    this.scene.add(this.reachArcMesh);
-
-    // 9. Build Center Cinema Screen & Left Web Deck Screen
+    // 8. Build Center Cinema Screen & Left Web Deck Screen
     this.cinemaPanel = new CinemaPanel(this.audio, (active) => {
       this.cinemaDimmerTargetOpacity = active ? 0.92 : 0.0;
     });
@@ -212,32 +205,19 @@ export class App {
     return group;
   }
 
-  private buildReachArc(): THREE.Line {
-    const points: THREE.Vector3[] = [];
-    const radius = 0.85;
-    for (let a = -Math.PI * 0.45; a <= Math.PI * 0.45; a += 0.05) {
-      points.push(new THREE.Vector3(Math.sin(a) * radius, 0.02, -Math.cos(a) * radius));
-    }
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({
-      color: 0x00f0ff,
-      transparent: true,
-      opacity: 0.25,
-    });
-    return new THREE.Line(geo, mat);
-  }
-
   /**
-   * Reset panels to comfortable seated ergonomic wrap-around cockpit (eye level 1.2m, arm reach 0.75m)
+   * Reset panels to comfortable seated ergonomic wrap-around cockpit (eye level 1.25m, arm reach 0.75m)
+   * Dashboard Group: position.set(-0.45, 1.25, -0.75), rotation.y = 0.28
+   * Media Screen Group: position.set(0.45, 1.25, -0.75), rotation.y = -0.28
    */
   public resetWorkspacePositions(): void {
-    // Right Screen: Media Screen at x: 0.55, y: 1.2, z: -0.75, rotated inward at -0.35 rad
-    this.cinemaPanel.group.position.set(0.55, 1.2, -0.75);
-    this.cinemaPanel.group.rotation.set(0, -0.35, 0);
+    // Dashboard Group
+    this.webDeckPanel.group.position.set(-0.45, 1.25, -0.75);
+    this.webDeckPanel.group.rotation.set(0, 0.28, 0);
 
-    // Left Screen: Web Deck at x: -0.55, y: 1.2, z: -0.75, rotated inward at 0.35 rad
-    this.webDeckPanel.group.position.set(-0.55, 1.2, -0.75);
-    this.webDeckPanel.group.rotation.set(0, 0.35, 0);
+    // Media Screen Group
+    this.cinemaPanel.group.position.set(0.45, 1.25, -0.75);
+    this.cinemaPanel.group.rotation.set(0, -0.28, 0);
 
     this.audio.playWindowSnap();
   }

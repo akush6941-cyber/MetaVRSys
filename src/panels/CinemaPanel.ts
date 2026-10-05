@@ -160,13 +160,11 @@ export class CinemaPanel {
     this.group.add(edgeLines);
 
     // 5. Floating Interactive Control Dock (directly beneath video screen)
-    const dockY = -this.baseHeight / 2 - 0.06;
-    const dockZ = 0.02;
-
-    const controlDock = new THREE.Group();
-    controlDock.name = 'MediaControlDock';
-    controlDock.position.set(0, dockY, dockZ);
-    this.controlDock = controlDock;
+    const mediaControlDock = new THREE.Group();
+    mediaControlDock.name = 'MediaControlDock';
+    mediaControlDock.position.set(0, -0.42, 0.04);
+    mediaControlDock.rotation.set(0, 0, 0);
+    this.controlDock = mediaControlDock;
 
     // A. Play / Pause Button
     this.btnPlay = this.createButton(
@@ -177,7 +175,7 @@ export class CinemaPanel {
       () => this.togglePlay()
     );
     this.btnPlay.position.set(-0.36, 0, 0);
-    controlDock.add(this.btnPlay);
+    mediaControlDock.add(this.btnPlay);
 
     // B. Time Scrubber Bar (Track + Fill + Knob)
     const trackWidth = 0.38;
@@ -207,7 +205,7 @@ export class CinemaPanel {
       onClick: scrubberAction,
       onTrigger: scrubberAction,
     };
-    controlDock.add(this.scrubberTrack);
+    mediaControlDock.add(this.scrubberTrack);
 
     // Scrubber Fill (Active cyan progress bar)
     const fillGeo = new THREE.BoxGeometry(0.001, trackHeight * 0.8, 0.012);
@@ -238,7 +236,7 @@ export class CinemaPanel {
       () => this.toggleVolume()
     );
     this.btnVolume.position.set(0.24, 0, 0);
-    controlDock.add(this.btnVolume);
+    mediaControlDock.add(this.btnVolume);
 
     // D. Cinema Mode Button
     this.btnCinema = this.createButton(
@@ -249,13 +247,14 @@ export class CinemaPanel {
       () => this.toggleCinema()
     );
     this.btnCinema.position.set(0.38, 0, 0);
-    controlDock.add(this.btnCinema);
+    mediaControlDock.add(this.btnCinema);
 
-    // Parent the media control dock directly to the video screen group
-    this.mediaScreenGroup.add(controlDock);
+    // Hard-parent mediaControlDock to mediaScreenGroup
+    this.mediaScreenGroup.add(mediaControlDock);
 
     // 6. Bottom Pill Handle Bar (Active Grab Target for 3D Repositioning)
-    const handleY = dockY - 0.055;
+    const handleY = -0.49;
+    const handleZ = 0.04;
     const handleGeo = new THREE.CylinderGeometry(0.008, 0.008, this.baseWidth * 0.6, 16);
     const handleMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -266,7 +265,7 @@ export class CinemaPanel {
     });
     this.handleMesh = new THREE.Mesh(handleGeo, handleMat);
     this.handleMesh.rotation.z = Math.PI / 2;
-    this.handleMesh.position.set(0, handleY, dockZ);
+    this.handleMesh.position.set(0, handleY, handleZ);
     this.mediaScreenGroup.add(this.handleMesh);
 
     // 0.15m Hitbox for effortless grabbing
@@ -281,9 +280,9 @@ export class CinemaPanel {
     };
     this.mediaScreenGroup.add(this.handleHitbox);
 
-    // 2. Reposition the media screen closer into seated arc: x: 0.55, y: 1.2, z: -0.75, rotation.y: -0.35
-    this.mediaScreenGroup.position.set(0.55, 1.2, -0.75);
-    this.mediaScreenGroup.rotation.y = -0.35;
+    // 2. Seated Arc Cockpit Alignment: Media Screen Group at x: 0.45, y: 1.25, z: -0.75, rotation.y: -0.28
+    this.mediaScreenGroup.position.set(0.45, 1.25, -0.75);
+    this.mediaScreenGroup.rotation.set(0, -0.28, 0);
   }
 
   /**

@@ -236,9 +236,9 @@ export class WebDeckPanel {
     this.updateTabVisuals();
     this.renderCanvas();
 
-    // Position panel on left (forming wrap-around cockpit with media screen)
-    this.group.position.set(-0.55, 1.2, -0.75);
-    this.group.rotation.y = 0.35;
+    // 2. Seated Arc Cockpit Alignment: Dashboard Group at x: -0.45, y: 1.25, z: -0.75, rotation.y: 0.28
+    this.group.position.set(-0.45, 1.25, -0.75);
+    this.group.rotation.set(0, 0.28, 0);
   }
 
   private createTabPill(title: string, width: number, onClick: () => void): THREE.Mesh {

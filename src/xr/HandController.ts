@@ -295,8 +295,8 @@ export class HandController {
         }
       }
 
-      // Front activation threshold (< 0.02m / 20mm)
-      if (minDist < 0.02 && !mesh.userData.isPressed) {
+      // Front activation threshold (< 0.025m / 25mm)
+      if (minDist < 0.025 && !mesh.userData.isPressed) {
         mesh.userData.isPressed = true;
         const origZ = mesh.userData.originalZ ?? mesh.position.z;
         mesh.userData.originalZ = origZ;

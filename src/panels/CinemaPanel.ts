@@ -160,11 +160,11 @@ export class CinemaPanel {
     this.group.add(edgeLines);
 
     // 5. Floating Interactive Control Dock (directly beneath video screen)
-    const mediaControlDock = new THREE.Group();
-    mediaControlDock.name = 'MediaControlDock';
-    mediaControlDock.position.set(0, -0.42, 0.05);
-    mediaControlDock.rotation.set(0, 0, 0);
-    this.controlDock = mediaControlDock;
+    const mediaControls = new THREE.Group();
+    mediaControls.name = 'MediaControls';
+    mediaControls.position.set(0, -0.42, 0.04);
+    mediaControls.rotation.set(0, 0, 0);
+    this.controlDock = mediaControls;
 
     // A. Play / Pause Button
     this.btnPlay = this.createButton(
@@ -175,7 +175,7 @@ export class CinemaPanel {
       () => this.togglePlay()
     );
     this.btnPlay.position.set(-0.36, 0, 0);
-    mediaControlDock.add(this.btnPlay);
+    mediaControls.add(this.btnPlay);
 
     // B. Time Scrubber Bar (Track + Fill + Knob)
     const trackWidth = 0.38;
@@ -205,7 +205,7 @@ export class CinemaPanel {
       onClick: scrubberAction,
       onTrigger: scrubberAction,
     };
-    mediaControlDock.add(this.scrubberTrack);
+    mediaControls.add(this.scrubberTrack);
 
     // Scrubber Fill (Active cyan progress bar)
     const fillGeo = new THREE.BoxGeometry(0.001, trackHeight * 0.8, 0.012);
@@ -236,7 +236,7 @@ export class CinemaPanel {
       () => this.toggleVolume()
     );
     this.btnVolume.position.set(0.24, 0, 0);
-    mediaControlDock.add(this.btnVolume);
+    mediaControls.add(this.btnVolume);
 
     // D. Cinema Mode Button
     this.btnCinema = this.createButton(
@@ -247,14 +247,14 @@ export class CinemaPanel {
       () => this.toggleCinema()
     );
     this.btnCinema.position.set(0.38, 0, 0);
-    mediaControlDock.add(this.btnCinema);
+    mediaControls.add(this.btnCinema);
 
-    // Hard-parent mediaControlDock to mediaScreenGroup
-    this.mediaScreenGroup.add(mediaControlDock);
+    // Attach mediaControls directly to mediaScreenGroup
+    this.mediaScreenGroup.add(mediaControls);
 
     // 6. Bottom Pill Handle Bar (Active Grab Target for 3D Repositioning)
     const handleY = -0.49;
-    const handleZ = 0.05;
+    const handleZ = 0.04;
     const handleGeo = new THREE.CylinderGeometry(0.008, 0.008, this.baseWidth * 0.6, 16);
     const handleMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,

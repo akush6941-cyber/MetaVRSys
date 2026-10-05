@@ -249,12 +249,7 @@ export class CinemaPanel {
     this.btnCinema.position.set(0.38, 0, 0);
     mediaControls.add(this.btnCinema);
 
-    // Attach mediaControls directly to mediaScreenGroup
-    this.mediaScreenGroup.add(mediaControls);
-
     // 6. Bottom Pill Handle Bar (Active Grab Target for 3D Repositioning)
-    const handleY = -0.49;
-    const handleZ = 0.04;
     const handleGeo = new THREE.CylinderGeometry(0.008, 0.008, this.baseWidth * 0.6, 16);
     const handleMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
@@ -265,8 +260,8 @@ export class CinemaPanel {
     });
     this.handleMesh = new THREE.Mesh(handleGeo, handleMat);
     this.handleMesh.rotation.z = Math.PI / 2;
-    this.handleMesh.position.set(0, handleY, handleZ);
-    this.mediaScreenGroup.add(this.handleMesh);
+    this.handleMesh.position.set(0, -0.07, 0);
+    mediaControls.add(this.handleMesh);
 
     // 0.15m Hitbox for effortless grabbing
     const hitGeo = new THREE.BoxGeometry(this.baseWidth * 0.75, 0.14, 0.14);
@@ -278,7 +273,12 @@ export class CinemaPanel {
       type: 'handle',
       panelGroup: this.mediaScreenGroup,
     };
-    this.mediaScreenGroup.add(this.handleHitbox);
+    mediaControls.add(this.handleHitbox);
+
+    // Attach mediaControls directly to mediaScreenGroup at fixed local offset
+    mediaControls.position.set(0, -0.42, 0.04);
+    mediaControls.rotation.set(0, 0, 0);
+    this.mediaScreenGroup.add(mediaControls);
 
     // 2. Seated Arc Cockpit Alignment: Media Screen Group at x: 0.48, y: 1.25, z: -0.75, rotation.y: -0.32
     this.mediaScreenGroup.position.set(0.48, 1.25, -0.75);

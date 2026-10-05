@@ -236,11 +236,9 @@ export class WebDeckPanel {
     this.updateTabVisuals();
     this.renderCanvas();
 
-    // Position panel on left (32 degrees left along 0.82m seated arc)
-    const angle = THREE.MathUtils.degToRad(-30);
-    const dist = 0.82;
-    this.group.position.set(Math.sin(angle) * dist, 1.2, -Math.cos(angle) * dist);
-    this.group.rotation.y = THREE.MathUtils.degToRad(20);
+    // Position panel on left (forming wrap-around cockpit with media screen)
+    this.group.position.set(-0.55, 1.2, -0.75);
+    this.group.rotation.y = 0.35;
   }
 
   private createTabPill(title: string, width: number, onClick: () => void): THREE.Mesh {

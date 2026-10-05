@@ -9,6 +9,8 @@ import { AudioEngine } from '../audio/AudioEngine';
 
 export class CinemaPanel {
   public group: THREE.Group;
+  public mediaScreenGroup: THREE.Group;
+  public controlDock!: THREE.Group;
   public screenMesh: THREE.Mesh;
   public handleMesh: THREE.Mesh;
   public handleHitbox: THREE.Mesh;
@@ -49,6 +51,7 @@ export class CinemaPanel {
     this.audio = audio;
     this.onCinemaToggle = onCinemaToggle;
     this.group = new THREE.Group();
+    this.mediaScreenGroup = this.group;
 
     // 1. Setup HTML5 Video Element with Royalty-Free Sample + CORS
     this.videoElement = document.createElement('video');
@@ -156,9 +159,14 @@ export class CinemaPanel {
     const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
     this.group.add(edgeLines);
 
-    // 5. Floating Interactive Control Dock (Y: -0.32m beneath screen)
+    // 5. Floating Interactive Control Dock (directly beneath video screen)
     const dockY = -this.baseHeight / 2 - 0.06;
     const dockZ = 0.02;
+
+    const controlDock = new THREE.Group();
+    controlDock.name = 'MediaControlDock';
+    controlDock.position.set(0, dockY, dockZ);
+    this.controlDock = controlDock;
 
     // A. Play / Pause Button
     this.btnPlay = this.createButton(
@@ -168,8 +176,8 @@ export class CinemaPanel {
       0x0284c7,
       () => this.togglePlay()
     );
-    this.btnPlay.position.set(-0.36, dockY, dockZ);
-    this.group.add(this.btnPlay);
+    this.btnPlay.position.set(-0.36, 0, 0);
+    controlDock.add(this.btnPlay);
 
     // B. Time Scrubber Bar (Track + Fill + Knob)
     const trackWidth = 0.38;
@@ -181,7 +189,7 @@ export class CinemaPanel {
       metalness: 0.6,
     });
     this.scrubberTrack = new THREE.Mesh(trackGeo, trackMat);
-    this.scrubberTrack.position.set(-0.04, dockY, dockZ);
+    this.scrubberTrack.position.set(-0.04, 0, 0);
     const scrubberAction = (point?: THREE.Vector3) => {
       if (!point) return;
       const local = this.scrubberTrack.worldToLocal(point.clone());
@@ -195,11 +203,11 @@ export class CinemaPanel {
       width: trackWidth,
       height: trackHeight,
       depth: 0.01,
-      originalZ: dockZ,
+      originalZ: 0,
       onClick: scrubberAction,
       onTrigger: scrubberAction,
     };
-    this.group.add(this.scrubberTrack);
+    controlDock.add(this.scrubberTrack);
 
     // Scrubber Fill (Active cyan progress bar)
     const fillGeo = new THREE.BoxGeometry(0.001, trackHeight * 0.8, 0.012);
@@ -229,8 +237,8 @@ export class CinemaPanel {
       0x334155,
       () => this.toggleVolume()
     );
-    this.btnVolume.position.set(0.24, dockY, dockZ);
-    this.group.add(this.btnVolume);
+    this.btnVolume.position.set(0.24, 0, 0);
+    controlDock.add(this.btnVolume);
 
     // D. Cinema Mode Button
     this.btnCinema = this.createButton(
@@ -240,8 +248,11 @@ export class CinemaPanel {
       0x475569,
       () => this.toggleCinema()
     );
-    this.btnCinema.position.set(0.38, dockY, dockZ);
-    this.group.add(this.btnCinema);
+    this.btnCinema.position.set(0.38, 0, 0);
+    controlDock.add(this.btnCinema);
+
+    // Parent the media control dock directly to the video screen group
+    this.mediaScreenGroup.add(controlDock);
 
     // 6. Bottom Pill Handle Bar (Active Grab Target for 3D Repositioning)
     const handleY = dockY - 0.055;
@@ -256,7 +267,7 @@ export class CinemaPanel {
     this.handleMesh = new THREE.Mesh(handleGeo, handleMat);
     this.handleMesh.rotation.z = Math.PI / 2;
     this.handleMesh.position.set(0, handleY, dockZ);
-    this.group.add(this.handleMesh);
+    this.mediaScreenGroup.add(this.handleMesh);
 
     // 0.15m Hitbox for effortless grabbing
     const hitGeo = new THREE.BoxGeometry(this.baseWidth * 0.75, 0.14, 0.14);
@@ -266,12 +277,13 @@ export class CinemaPanel {
     this.handleHitbox.userData = {
       id: 'cinema-handle',
       type: 'handle',
-      panelGroup: this.group,
+      panelGroup: this.mediaScreenGroup,
     };
-    this.group.add(this.handleHitbox);
+    this.mediaScreenGroup.add(this.handleHitbox);
 
-    // Set initial position
-    this.group.position.set(0, 1.2, -0.85);
+    // 2. Reposition the media screen closer into seated arc: x: 0.55, y: 1.2, z: -0.75, rotation.y: -0.35
+    this.mediaScreenGroup.position.set(0.55, 1.2, -0.75);
+    this.mediaScreenGroup.rotation.y = -0.35;
   }
 
   /**
@@ -344,7 +356,7 @@ export class CinemaPanel {
       width,
       height,
       depth,
-      originalZ: 0.02,
+      originalZ: 0,
       onClick: clickHandler,
       onTrigger: clickHandler,
       updateLabel,

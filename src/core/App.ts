@@ -228,30 +228,16 @@ export class App {
   }
 
   /**
-   * Reset panels to comfortable seated ergonomic arc (0.85m radius, eye level 1.2m)
+   * Reset panels to comfortable seated ergonomic wrap-around cockpit (eye level 1.2m, arm reach 0.75m)
    */
   public resetWorkspacePositions(): void {
-    const userEye = new THREE.Vector3(0, 1.2, 0);
+    // Right Screen: Media Screen at x: 0.55, y: 1.2, z: -0.75, rotated inward at -0.35 rad
+    this.cinemaPanel.group.position.set(0.55, 1.2, -0.75);
+    this.cinemaPanel.group.rotation.set(0, -0.35, 0);
 
-    // Center Screen: Cinema Player straight ahead at -0.85m
-    this.cinemaPanel.group.position.set(0, 1.2, -0.85);
-    const lookCenter = new THREE.Vector3(userEye.x, 1.2, userEye.z);
-    this.cinemaPanel.group.lookAt(lookCenter);
-    this.cinemaPanel.group.rotation.x = 0;
-    this.cinemaPanel.group.rotation.z = 0;
-
-    // Left Screen: Web Deck at 30 deg left (0.82m reach)
-    const leftAngle = THREE.MathUtils.degToRad(-30);
-    const leftDist = 0.82;
-    this.webDeckPanel.group.position.set(
-      Math.sin(leftAngle) * leftDist,
-      1.2,
-      -Math.cos(leftAngle) * leftDist
-    );
-    const lookLeft = new THREE.Vector3(userEye.x, 1.2, userEye.z);
-    this.webDeckPanel.group.lookAt(lookLeft);
-    this.webDeckPanel.group.rotation.x = 0;
-    this.webDeckPanel.group.rotation.z = 0;
+    // Left Screen: Web Deck at x: -0.55, y: 1.2, z: -0.75, rotated inward at 0.35 rad
+    this.webDeckPanel.group.position.set(-0.55, 1.2, -0.75);
+    this.webDeckPanel.group.rotation.set(0, 0.35, 0);
 
     this.audio.playWindowSnap();
   }
